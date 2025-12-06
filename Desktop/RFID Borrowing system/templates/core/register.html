@@ -1,0 +1,45 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Create Account - RFID Borrowing System{% endblock %}
+
+{% block guest_content %}
+<div class="space-y-6">
+  <div>
+    <h1 class="text-2xl font-semibold text-white">Create Account</h1>
+    <p class="text-sm text-gray-400 mt-1">Set up a new administrator account to access the dashboard.</p>
+  </div>
+  <form method="post" novalidate class="space-y-4">
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="rounded-xl px-4 py-3 bg-rose-500/15 text-rose-200 text-sm">
+        {% for error in form.non_field_errors %}
+          <div>{{ error }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% for field in form %}
+      <div class="space-y-1">
+        <label for="{{ field.id_for_label }}" class="text-sm font-medium text-gray-200">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}
+          <div class="text-xs text-gray-400">{{ field.help_text|safe }}</div>
+        {% endif %}
+        {% if field.errors %}
+          <ul class="text-xs text-rose-300 list-disc list-inside">
+            {% for error in field.errors %}
+              <li>{{ error }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+    {% endfor %}
+    <button type="submit" class="w-full py-3 rounded-xl cta-gradient font-semibold shadow-lg">Create Account</button>
+  </form>
+  <p class="text-center text-sm text-gray-400">
+    Already have access?
+    <a href="{% url 'core:login' %}" class="text-cyan-300 hover:text-cyan-200 font-semibold">Sign in</a>
+  </p>
+</div>
+{% endblock %}
+
+

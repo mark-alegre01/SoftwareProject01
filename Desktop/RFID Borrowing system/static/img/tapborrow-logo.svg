@@ -1,0 +1,19 @@
+<svg width="220" height="64" viewBox="0 0 220 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="tb-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0A7BC2"/>
+      <stop offset="100%" stop-color="#53B3F2"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(0 4)">
+    <path d="M28 0L4 14v28l24 14 24-14V14L28 0z" fill="url(#tb-gradient)"/>
+    <rect x="22" y="16" width="12" height="20" rx="3" fill="#fff" opacity="0.95"/>
+    <rect x="19" y="10" width="4" height="32" rx="2" fill="white" opacity="0.5"/>
+    <rect x="37" y="10" width="4" height="32" rx="2" fill="white" opacity="0.5"/>
+    <path d="M12 20c-3 2-3 10 0 12" stroke="white" stroke-width="2.6" stroke-linecap="round" opacity="0.8"/>
+    <path d="M44 20c3 2 3 10 0 12" stroke="white" stroke-width="2.6" stroke-linecap="round" opacity="0.8"/>
+  </g>
+  <text x="70" y="38" font-size="28" font-family="Poppins, 'Segoe UI', sans-serif" font-weight="600" fill="#0A3B68">Tap</text>
+  <text x="120" y="38" font-size="28" font-family="Poppins, 'Segoe UI', sans-serif" font-weight="600" fill="#53B3F2">Borrow</text>
+</svg>
+

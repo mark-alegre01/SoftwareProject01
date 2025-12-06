@@ -1,0 +1,392 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Return Item - RFID Borrowing System{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>↩️ Return Item</h1>
+  <p>Scan the item QR code to return it</p>
+</div>
+
+<div class="content-card gradient-warm-red">
+  <div style="background: #e0f2fe; padding: 12px; border-radius: 10px; margin-bottom: 12px; border-left: 4px solid #0284c7;">
+    <strong style="display: block; margin-bottom: 8px; color: #0c4a6e;">📱 Use Phone Camera:</strong>
+    <p style="margin: 0; font-size: 0.9rem; color: #0c4a6e;">
+      <strong>Option 1 (Recommended):</strong> Open <code style="background: white; padding: 2px 6px; border-radius: 4px;">https://YOUR_PC_IP:8443{% url 'core:return' %}</code> on your phone browser (same WiFi network)<br>
+      <strong>⚠️ IMPORTANT:</strong> Use <strong>HTTPS</strong> (not HTTP) for camera access on mobile devices<br>
+      <strong>Option 2:</strong> Use IP Webcam app and enter stream URL below
+    </p>
+    <details style="margin-top: 8px;">
+      <summary style="cursor: pointer; color: #0284c7; font-weight: 600;">📷 Use Phone Camera Stream (IP Webcam)</summary>
+      <div style="margin-top: 8px;">
+        <label style="font-size: 0.9rem;">Phone Camera Stream URL (from IP Webcam app):
+          <input type="text" id="phoneCameraUrl" placeholder="http://192.168.1.XXX:8080/video" style="width: 100%; padding: 8px; margin-top: 4px; font-size: 0.9rem;" />
+          <small style="display: block; margin-top: 4px; color: #64748b; font-size: 0.85rem;">
+            Install "IP Webcam" app on your phone, start server, then enter the video URL shown in the app
+          </small>
+        </label>
+        <button type="button" id="usePhoneCamera" class="btn btn-secondary btn-lg" style="width: 100%; margin-top: 8px;">
+          <span class="btn-icon">📱</span>
+          <span class="btn-text">Use Phone Camera</span>
+        </button>
+      </div>
+    </details>
+  </div>
+  <div id="returnQrReader"></div>
+  <div class="scan-status waiting" id="returnQrStatus">📷 Scanning QR code for return...</div>
+  <div id="cameraPermissionHelp" class="hidden" style="background: #fef3c7; padding: 16px; border-radius: 10px; margin: 12px 0; border-left: 4px solid #f59e0b;">
+    <strong style="display: block; margin-bottom: 8px; color: #92400e;">📷 How to Enable Camera Access:</strong>
+    <ul style="margin: 8px 0; padding-left: 20px; color: #92400e; font-size: 0.9rem;">
+      <li><strong>Chrome/Edge:</strong> Click the camera icon (📷) in the address bar → Allow</li>
+      <li><strong>Firefox:</strong> Click the padlock icon → Permissions → Camera → Allow</li>
+      <li><strong>Safari:</strong> Safari → Settings → Websites → Camera → Allow</li>
+      <li><strong>Mobile:</strong> Go to browser settings → Site permissions → Camera → Allow</li>
+    </ul>
+    <p style="margin: 8px 0 0 0; color: #92400e; font-size: 0.85rem;"><strong>Note:</strong> For camera access on mobile devices, you MUST use HTTPS (not HTTP). If using localhost (127.0.0.1), camera access works automatically. For network IP access, HTTPS is required.</p>
+    <button type="button" id="retryReturnCamera" class="btn btn-primary btn-lg">
+      <span class="btn-icon">🔄</span>
+      <span class="btn-text">Retry Camera</span>
+    </button>
+  </div>
+  <button type="button" class="btn btn-secondary btn-lg" id="stopReturnQrScan" style="width: 100%;">
+    <span class="btn-icon">⏹️</span>
+    <span class="btn-text">Stop Camera</span>
+  </button>
+  <form id="returnForm" class="hidden" style="margin-top: 20px;">
+    {% csrf_token %}
+    <label>Item QR or Transaction ID
+      <input id="returnInput" class="mono" type="text" placeholder="Scan QR or enter transaction ID" required style="padding: 12px;" />
+    </label>
+    <div style="display: flex; gap: 12px; margin-top: 12px;">
+      <button type="submit" class="btn btn-success btn-lg" style="flex: 1;">
+        <span class="btn-icon">✓</span>
+        <span class="btn-text">Return Item</span>
+      </button>
+      <button type="button" class="btn btn-secondary btn-lg" id="clearReturn" style="flex: 1;">
+        <span class="btn-icon">🗑️</span>
+        <span class="btn-text">Clear</span>
+      </button>
+    </div>
+  </form>
+  <dialog id="returnToast"></dialog>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const apiBase = '/api';
+  let returnQrScanner = null;
+  const csrfToken = document.querySelector('#returnForm [name=csrfmiddlewaretoken]')?.value;
+
+  function showToast(dialog, message) {
+    dialog.textContent = message;
+    dialog.showModal();
+    setTimeout(() => dialog.close(), 2200);
+  }
+
+  async function startReturnQrScanner(usePhoneCameraUrl = null) {
+    try {
+      const qrReader = document.getElementById('returnQrReader');
+      qrReader.innerHTML = '';
+      
+      // If using phone camera URL, create video element and scan frames
+      if (usePhoneCameraUrl) {
+        document.getElementById('returnQrStatus').textContent = '📷 Connecting to phone camera...';
+        document.getElementById('returnQrStatus').className = 'scan-status waiting';
+        
+        // Create video element to play the stream
+        const video = document.createElement('video');
+        video.src = usePhoneCameraUrl;
+        video.autoplay = true;
+        video.playsInline = true;
+        video.style.width = '100%';
+        video.style.borderRadius = '12px';
+        video.style.display = 'block';
+        
+        const qrReader = document.getElementById('returnQrReader');
+        qrReader.innerHTML = '';
+        qrReader.appendChild(video);
+        
+        // Create canvas to capture frames
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        returnQrScanner = new Html5Qrcode('returnQrReader');
+        let scanInterval = null;
+        
+        video.onloadedmetadata = () => {
+          // Set canvas dimensions based on video
+          canvas.width = video.videoWidth || 640;
+          canvas.height = video.videoHeight || 480;
+          video.play();
+          document.getElementById('returnQrStatus').textContent = '📷 Phone camera ready. Point at QR code...';
+          document.getElementById('returnQrStatus').className = 'scan-status waiting';
+          
+          // Start scanning frames
+          scanInterval = setInterval(async () => {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+              try {
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = canvas.toDataURL('image/png');
+                
+                const result = await returnQrScanner.scanFile(imageData, false);
+                if (result) {
+                  const qrValue = result.trim();
+                  clearInterval(scanInterval);
+                  document.getElementById('returnQrStatus').textContent = `✅ QR Code scanned: ${qrValue}`;
+                  document.getElementById('returnQrStatus').className = 'scan-status success';
+                  video.pause();
+                  // Populate input and show confirm form
+                  const formEl = document.getElementById('returnForm');
+                  const inputEl = document.getElementById('returnInput');
+                  inputEl.value = qrValue;
+                  formEl.classList.remove('hidden');
+                  inputEl.focus();
+                }
+              } catch (e) {
+                // No QR code found, continue scanning
+              }
+            }
+          }, 500); // Scan every 500ms
+          
+          // Store interval to clear it later
+          returnQrScanner._scanInterval = scanInterval;
+          returnQrScanner._video = video;
+        };
+        
+        video.onerror = () => {
+          document.getElementById('returnQrStatus').textContent = '❌ Could not connect to phone camera. Check the URL and ensure IP Webcam is running.';
+          document.getElementById('returnQrStatus').className = 'scan-status error';
+        };
+        
+        return;
+      }
+      
+      // Regular camera access
+      // Stop any existing scanner first to release camera
+      if (returnQrScanner) {
+        try {
+          await returnQrScanner.stop();
+          returnQrScanner.clear();
+        } catch (e) {
+          // Ignore errors when stopping
+        }
+        returnQrScanner = null;
+      }
+      
+      // Wait a moment for camera to be released
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      document.getElementById('returnQrStatus').textContent = '📷 Starting camera...';
+      document.getElementById('returnQrStatus').className = 'scan-status waiting';
+      
+      returnQrScanner = new Html5Qrcode('returnQrReader');
+      
+      // Try back camera first, fallback to any camera
+      let cameraId = null;
+      let config = { facingMode: 'environment' };
+      
+      try {
+        const devices = await Html5Qrcode.getCameras();
+        if (devices && devices.length > 0) {
+          const backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('rear'));
+          cameraId = backCamera ? backCamera.id : devices[0].id;
+          config = { deviceId: { exact: cameraId } };
+        }
+      } catch (e) {
+        console.log('Could not enumerate cameras, using default');
+        config = { facingMode: 'environment' };
+      }
+      
+      // Try starting with specific camera, fallback to facingMode if it fails
+      try {
+        await returnQrScanner.start(
+          config,
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          async (decodedText) => {
+          const qrValue = decodedText.trim();
+          document.getElementById('returnQrStatus').textContent = `✅ QR Code scanned: ${qrValue}`;
+          document.getElementById('returnQrStatus').className = 'scan-status success';
+          
+          returnQrScanner.stop().then(() => {
+            returnQrScanner.clear();
+            returnQrScanner = null;
+          }).catch(() => {});
+          
+          // Populate input and show confirm form
+          const formEl = document.getElementById('returnForm');
+          const inputEl = document.getElementById('returnInput');
+          inputEl.value = qrValue;
+          formEl.classList.remove('hidden');
+          inputEl.focus();
+        },
+        (errorMessage) => {
+          // Ignore scanning errors (normal while scanning)
+        }
+      );
+      
+        document.getElementById('returnQrStatus').textContent = '📷 Camera ready. Point at QR code...';
+        document.getElementById('returnQrStatus').className = 'scan-status waiting';
+      } catch (startErr) {
+        // If specific camera failed, try with facingMode
+        if (config.deviceId && startErr.name === 'NotReadableError') {
+          console.log('Specific camera failed, trying with facingMode');
+          try {
+            await returnQrScanner.start(
+              { facingMode: 'environment' },
+              { fps: 10, qrbox: { width: 250, height: 250 } },
+              async (decodedText) => {
+                const qrValue = decodedText.trim();
+                document.getElementById('returnQrStatus').textContent = `✅ QR Code scanned: ${qrValue}`;
+                document.getElementById('returnQrStatus').className = 'scan-status success';
+                
+                returnQrScanner.stop().then(() => {
+                  returnQrScanner.clear();
+                  returnQrScanner = null;
+                }).catch(() => {});
+                
+                try {
+                const res = await fetch(`${apiBase}/return`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'X-CSRFToken': csrfToken || ''
+                    },
+                    body: JSON.stringify({ item_qr: qrValue })
+                  });
+                  const data = await res.json().catch(() => ({}));
+                  if (!res.ok) throw new Error(data.detail || 'Return failed');
+                  
+                  const toast = document.getElementById('returnToast');
+                  showToast(toast, '✅ Item returned successfully! Redirecting...');
+                  
+                  setTimeout(() => {
+                    window.location.href = "{% url 'core:dashboard' %}";
+                  }, 2000);
+                } catch (e) {
+                  document.getElementById('returnQrStatus').textContent = `❌ Error: ${e.message}`;
+                  document.getElementById('returnQrStatus').className = 'scan-status error';
+                  setTimeout(() => {
+                    document.getElementById('returnQrStatus').textContent = '📷 Scanning QR code for return...';
+                    document.getElementById('returnQrStatus').className = 'scan-status waiting';
+                    startReturnQrScanner();
+                  }, 3000);
+                }
+              },
+              (errorMessage) => {
+                // Ignore scanning errors
+              }
+            );
+            document.getElementById('returnQrStatus').textContent = '📷 Camera ready. Point at QR code...';
+            document.getElementById('returnQrStatus').className = 'scan-status waiting';
+          } catch (fallbackErr) {
+            throw startErr; // Re-throw original error
+          }
+        } else {
+          throw startErr;
+        }
+      }
+    } catch (err) {
+      let errorMsg = 'Camera error: ';
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        errorMsg = '❌ Camera permission denied. Please allow camera access and try again.';
+        document.getElementById('cameraPermissionHelp').classList.remove('hidden');
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        errorMsg = '❌ No camera found. Please connect a camera device.';
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        errorMsg = '❌ Camera is already in use. Please close other apps using the camera and try again.';
+        document.getElementById('cameraPermissionHelp').classList.remove('hidden');
+      } else if (err.message) {
+        errorMsg = '❌ Camera error: ' + err.message;
+      } else if (err.toString) {
+        errorMsg = '❌ Camera error: ' + err.toString();
+      } else {
+        errorMsg = '❌ Unable to access camera. Please check your browser settings and try again.';
+      }
+      document.getElementById('returnQrStatus').textContent = errorMsg;
+      document.getElementById('returnQrStatus').className = 'scan-status error';
+      
+      // Clean up on error
+      if (returnQrScanner) {
+        try {
+          returnQrScanner.clear();
+        } catch (e) {}
+        returnQrScanner = null;
+      }
+    }
+  }
+  
+  // Phone camera handler
+  document.getElementById('usePhoneCamera').addEventListener('click', () => {
+    const phoneUrl = document.getElementById('phoneCameraUrl').value.trim();
+    if (!phoneUrl) {
+      alert('Please enter a phone camera stream URL (e.g., http://192.168.1.XXX:8080/video)');
+      return;
+    }
+    startReturnQrScanner(phoneUrl);
+  });
+
+  function stopReturnQrScanner() {
+    if (returnQrScanner) {
+      // Clear interval if using phone camera
+      if (returnQrScanner._scanInterval) {
+        clearInterval(returnQrScanner._scanInterval);
+      }
+      if (returnQrScanner._video) {
+        returnQrScanner._video.pause();
+        returnQrScanner._video.src = '';
+      }
+      returnQrScanner.stop().then(() => {
+        returnQrScanner.clear();
+        returnQrScanner = null;
+        document.getElementById('returnQrReader').innerHTML = '';
+        document.getElementById('returnQrStatus').textContent = 'Camera stopped';
+        document.getElementById('returnQrStatus').className = 'scan-status';
+      }).catch(() => {});
+    }
+  }
+
+  async function returnAction(evt) {
+    evt.preventDefault();
+    const toast = document.getElementById('returnToast');
+    const value = document.getElementById('returnInput').value.trim();
+    if (!value) return;
+    const payload = /^\d+$/.test(value) ? { transaction_id: Number(value) } : { item_qr: value };
+    try {
+      const res = await fetch(`${apiBase}/return`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken || ''
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Return failed');
+      showToast(toast, '✅ Returned successfully! Redirecting...');
+      setTimeout(() => {
+        window.location.href = "{% url 'core:dashboard' %}";
+      }, 1500);
+    } catch (e) {
+      showToast(toast, '❌ ' + (e.message || 'Error'));
+    }
+  }
+
+  document.getElementById('returnForm').addEventListener('submit', returnAction);
+  document.getElementById('clearReturn').addEventListener('click', () => {
+    document.getElementById('returnInput').value = '';
+  });
+      document.getElementById('stopReturnQrScan').addEventListener('click', () => {
+        stopReturnQrScanner();
+      });
+      
+      document.getElementById('retryReturnCamera').addEventListener('click', () => {
+        startReturnQrScanner();
+      });
+
+      // Auto-start scanner on page load
+      setTimeout(() => {
+        startReturnQrScanner();
+      }, 300);
+</script>
+{% endblock %}
