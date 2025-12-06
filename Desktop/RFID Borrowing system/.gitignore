@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# SQLite DB
+db.sqlite3
+
+# LaTeX build artifacts and output
+*.aux
+*.log
+*.bbl
+*.blg
+*.toc
+*.out
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+rfid_distributed_system_paper.pdf
+
+# SSL keys and certs (ignore private keys)
+ssl_certs/*.key
+ssl_certs/*.pem
+ssl_certs/*.crt
+
+# Editor/workspace
+.vscode/
+.idea/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+
+# Python test/cache
+.pytest_cache/
+
+# Ignore environment files
+.env
+
+# Ignore generated/static build artifacts
+staticfiles/
+build/
+dist/
