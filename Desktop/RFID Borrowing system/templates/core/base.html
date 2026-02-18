@@ -23,6 +23,10 @@
         transition: transform 0.3s ease-in-out;
         background-color: #ffffff;
         border-right: 1px solid #e0e0e0;
+        padding: 12px 12px 36px 12px; /* breathing room inside sidebar */
+        box-sizing: border-box;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
       }
 
       .card-base {
@@ -56,6 +60,9 @@
         .sidebar.visible-mobile {
           transform: translateX(0);
         }
+        /* When mobile sidebar is shown, add a backdrop to dim main content */
+        #sidebar-backdrop { display: none; }
+        body.sidebar-open #sidebar-backdrop { display: block; }
       }
 
       /* Table styling - light theme */
@@ -126,6 +133,12 @@
         color: #111827;
         max-width: 90vw;
         max-height: 90vh;
+        /* Ensure dialogs sit above sticky header and other UI elements and accept pointer events */
+        z-index: 99999;
+        position: fixed;
+        left: 50%;
+        top: 10%;
+        transform: translateX(-50%);
       }
 
       dialog::backdrop {
@@ -279,6 +292,8 @@
         color: #dc2626;
         border-color: #fecaca;
       }
+      /* Sidebar-specific action adjustments */
+      .device-config-card .action-btn { width:36px; height:36px; margin-left:8px; }
 
       /* Badge styling */
       .badge {
@@ -450,10 +465,104 @@
         color: #6b7280;
         font-size: 0.875rem;
       }
+
+      /* Global mobile table responsive styles */
+      @media (max-width: 768px) {
+        /* Enable horizontal scrolling for all tables on mobile */
+        table {
+          display: table;
+          table-layout: fixed;
+          min-width: 750px;
+        }
+
+        table thead th {
+          padding: 10px 8px;
+          font-size: 11px;
+          white-space: nowrap;
+        }
+
+        table tbody td {
+          padding: 8px;
+          font-size: 11px;
+          white-space: normal;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
+        }
+
+        table tbody td.mono {
+          font-size: 10px;
+          word-break: break-all;
+        }
+
+        /* Scroll container for tables */
+        div[style*="overflow-x: auto"] {
+          border-radius: 12px;
+          padding: 2px;
+          -webkit-overflow-scrolling: touch;
+          overflow-x: auto !important;
+          overflow-y: visible !important;
+        }
+
+        .badge {
+          padding: 4px 8px !important;
+          font-size: 10px !important;
+          white-space: nowrap;
+        }
+
+        .action-btn {
+          padding: 5px 6px !important;
+          font-size: 12px !important;
+          margin: 2px;
+        }
+      }
+
+      @media (max-width: 480px) {
+        table {
+          min-width: 700px;
+          font-size: 10px;
+        }
+
+        table thead th {
+          padding: 8px 6px;
+          font-size: 10px;
+          font-weight: 600;
+        }
+
+        table tbody td {
+          padding: 6px;
+          font-size: 9px;
+        }
+
+        table tbody td.mono {
+          font-size: 9px;
+        }
+
+        .badge {
+          padding: 3px 6px !important;
+          font-size: 9px !important;
+        }
+
+        .action-btn {
+          padding: 4px 5px !important;
+          font-size: 10px !important;
+        }
+
+        /* Stack action buttons vertically on very small screens */
+        table tbody td:last-child {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        table tbody td:last-child > * {
+          flex: 1;
+          width: 100%;
+        }
+      }
     </style>
     {% block extra_css %}{% endblock %}
   </head>
-  <body class="min-h-screen flex bg-gray-50">
+  <body class="min-h-screen flex bg-gray-50" data-current-user="{{ request.user.username|default:''|escapejs }}" data-is-admin="{{ request.user.is_staff|yesno:"true,false" }}">
     {% if request.user.is_authenticated %}
       <!-- Sidebar -->
       <aside id="sidebar-bw" class="sidebar fixed z-40 w-64 h-full shadow-xl md:shadow-none hidden-mobile">
@@ -511,6 +620,8 @@
           </a>
         </div>
       </aside>
+      <!-- Backdrop for mobile sidebar -->
+      <div id="sidebar-backdrop" aria-hidden="true"></div>
 
       <!-- Main Content Area -->
       <main class="flex-1 transition-all duration-300 md:ml-64 p-4 sm:p-8 overflow-y-auto">
@@ -605,9 +716,16 @@
       </div>
     </div>
 
+    <!-- Device Config modal moved to Devices page -->
+
     {% block extra_js %}{% endblock %}
     <script>
       document.addEventListener('DOMContentLoaded', () => {
+        // Current logged-in username exposed for client-side decisions
+        const CURRENT_USER = "{{ request.user.username|default:''|escapejs }}";
+        const IS_ADMIN = {{ request.user.is_staff|yesno:"true,false" }};
+        // Also expose on window for other page scripts that run outside this closure
+        try { window.CURRENT_USER = CURRENT_USER; window.IS_ADMIN = IS_ADMIN; } catch (e) { /* ignore */ }
         const menuToggle = document.getElementById('menu-toggle-bw');
         const sidebar = document.getElementById('sidebar-bw');
         const appLoader = document.getElementById('app-loader');
@@ -629,9 +747,17 @@
           const toggleSidebar = () => {
             sidebar.classList.toggle('hidden-mobile');
             sidebar.classList.toggle('visible-mobile');
+            document.body.classList.toggle('sidebar-open'); // show backdrop on mobile
           };
           
           menuToggle.addEventListener('click', toggleSidebar);
+          // Clicking backdrop closes sidebar
+          const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+          if (sidebarBackdrop) {
+            sidebarBackdrop.addEventListener('click', () => {
+              if (document.body.classList.contains('sidebar-open')) toggleSidebar();
+            });
+          }
           
           // Close sidebar when a navigation link is clicked on mobile
           sidebar.querySelectorAll('a').forEach(link => {
@@ -673,6 +799,37 @@
             showLoader();
           });
         });
+
+        // Device config and discovery UI moved to `core/devices.html` to keep global page scripts lightweight.
+        // If you need to reuse discovery code on another page, import the module from that template instead.
+
+        // Device discovery and control logic intentionally lives only in `devices.html`.
+        // (Leftover fragments removed to avoid syntax errors in other pages.)
+
+          // Push to all discovered devices (admin only)
+          const pushAllBtn = document.getElementById('pushAllBtn');
+          if (pushAllBtn) {
+            pushAllBtn.disabled = !IS_ADMIN;
+            pushAllBtn.addEventListener('click', async () => {
+              if (!confirm('Push current DeviceConfig to all discovered devices?')) return;
+              pushAllBtn.disabled = true; pushAllBtn.textContent = 'Pushing...';
+              try {
+                const csrftoken = getCookie('csrftoken');
+                const tokenToSend = csrftoken || getCookie('csrftoken') || '';
+                if (!tokenToSend) console.warn('No CSRF token found for push-all');
+                const res = await fetch('/api/device-config/push-all', { method: 'POST', credentials: 'same-origin', headers: {'Content-Type':'application/json','X-CSRFToken':tokenToSend || ''} });
+                if (res.status === 403) console.error('Push-all 403 (base); csrftoken cookie=', (document.cookie.match(/csrftoken=([^;]+)/)||[])[1], 'sent header=', tokenToSend);
+                const j = await res.json().catch(()=>null);
+                if (res.ok) {
+                  alert('Push to all completed. Check server logs for per-device results.');
+                  console.log(j);
+                } else {
+                  alert('Push to all failed: ' + ((j && j.detail) || res.statusText));
+                }
+              } catch (err) { alert('Push to all error: ' + (err.message || err)); }
+              finally { pushAllBtn.disabled = !IS_ADMIN; pushAllBtn.textContent = '📤 Push to All Discovered'; }
+            });
+          }
       });
     </script>
   </body>

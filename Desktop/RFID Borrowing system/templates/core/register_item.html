@@ -252,16 +252,7 @@
         newConfirmBtn.onclick = async () => {
           deleteDialog.close();
           try {
-            const res = await fetch(`${apiBase}/items/${target.id}`, {
-              method: 'DELETE',
-              headers: {
-                'X-CSRFToken': csrfToken || ''
-              }
-            });
-            if (res.status !== 204 && !res.ok) {
-              const err = await res.json().catch(() => ({}));
-              throw new Error(err.detail || 'Delete failed');
-            }
+            { const tokenToSend = csrfToken || (document.cookie.match(/csrftoken=([^;]+)/)||[])[1] || ''; if (!tokenToSend) console.warn('No CSRF token found for item delete'); const res = await fetch(`${apiBase}/items/${target.id}`, { method: 'DELETE', credentials: 'same-origin', headers: { 'X-CSRFToken': tokenToSend } }); if (res.status === 403) console.error('Delete item 403; csrftoken cookie=', (document.cookie.match(/csrftoken=([^;]+)/)||[])[1], 'sent header=', tokenToSend); if (res.status !== 204 && !res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || 'Delete failed'); } }
             showToast(document.getElementById('registerItemToast'), '🗑️ Item deleted');
             if (editingItemId === target.id) {
               setItemFormMode(null);
@@ -360,20 +351,7 @@
 
     if (editingItemId) {
       try {
-        const res = await fetch(`${apiBase}/items/${editingItemId}`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken || ''
-          },
-          body: JSON.stringify({
-            name,
-            description,
-            is_active: isActiveValue
-          })
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.detail || 'Update failed');
+        { const tokenToSend = csrfToken || (document.cookie.match(/csrftoken=([^;]+)/)||[])[1] || ''; if (!tokenToSend) console.warn('No CSRF token found for item update'); const res = await fetch(`${apiBase}/items/${editingItemId}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': tokenToSend }, body: JSON.stringify({ name, description, is_active: isActiveValue }) }); if (res.status === 403) console.error('Update item 403; csrftoken cookie=', (document.cookie.match(/csrftoken=([^;]+)/)||[])[1], 'sent header=', tokenToSend); const data = await res.json().catch(() => ({})); if (!res.ok) throw new Error(data.detail || 'Update failed'); }
         showToast(toast, '💾 Item updated');
         setItemFormMode(null);
         const query = document.getElementById('itemSearchInput')?.value.trim() || '';
@@ -385,17 +363,20 @@
     }
     
     try {
+      const tokenToSend = csrfToken || (document.cookie.match(/csrftoken=([^;]+)/)||[])[1] || '';
+      if (!tokenToSend) console.warn('No CSRF token found for item registration');
       const res = await fetch(`${apiBase}/register-item`, {
-        method: 'POST',
+        method: 'POST', credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken || ''
+          'X-CSRFToken': tokenToSend
         },
         body: JSON.stringify({
           name: name,
           description: description
         })
       });
+      if (res.status === 403) console.error('Register item 403; csrftoken cookie=', (document.cookie.match(/csrftoken=([^;]+)/)||[])[1], 'sent header=', tokenToSend);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || 'Registration failed');
       

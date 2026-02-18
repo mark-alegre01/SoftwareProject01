@@ -3,6 +3,114 @@
 {% block title %}Borrow Item - RFID Borrowing System{% endblock %}
 
 {% block content %}
+<style>
+/* UI polish for the Borrow page */
+.page-header { background: linear-gradient(90deg,#06b6d4, #3b82f6); color: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 6px 20px rgba(59,130,246,0.18); margin-bottom: 20px;}
+.page-header h1 { margin:0; font-size: 28px; font-weight: 800; display:flex; align-items: center; gap: 10px;}
+.page-header p { margin: 6px 0 0; opacity: 0.95;}
+.btn { transition: transform .15s ease, box-shadow .15s ease; }
+.btn:hover{ transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.12); }
+.content-card { padding: 24px; border-radius: 16px; box-shadow: 0 8px 30px rgba(2,6,23,0.06); background: linear-gradient(180deg, #fff, #f8fafc); }
+/* Responsive QR Modal */
+#qrScanModal {
+  border: none !important;
+  border-radius: 20px !important;
+  padding: 0 !important;
+  width: 90% !important;
+  max-width: 500px !important;
+  max-height: 85vh !important;
+  overflow: hidden !important;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3) !important;
+}
+#qrScanModal::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+/* Responsive mobile QR scanner */
+@media (max-width: 600px) {
+  #qrScanModal {
+    width: 95% !important;
+    max-width: 100% !important;
+    max-height: 90vh !important;
+    border-radius: 16px !important;
+  }
+}
+#qr-reader { 
+  min-height: 240px !important; 
+  height: auto !important; 
+  width: 100% !important;
+  aspect-ratio: 1 !important;
+  border-radius: 12px !important; 
+  overflow: hidden !important; 
+  position: relative !important; 
+  background: #000 !important; 
+  display: flex !important; 
+  align-items: center !important; 
+  justify-content: center !important;
+}
+/* Ensure Html5Qrcode overlay is visible and styled nicely */
+#qr-reader .qrbox { 
+  border: 3px solid rgba(2,132,199,0.95) !important; 
+  box-sizing: border-box !important; 
+  border-radius: 10px !important; 
+  position: relative !important; 
+}
+#qr-reader .html5-qrcode-mask { background: rgba(0,0,0,0.5) !important; }
+#qr-reader .html5-qrcode-mask .html5-qrcode-mask-inner { background: transparent !important; }
+#qr-reader video { width: 100% !important; height: auto !important; display: block !important; }
+#qr-reader canvas { width: 100% !important; height: auto !important; }
+/* Corner brackets for better visual guide */
+.qr-corner {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border: 3px solid #06b6d4;
+  pointer-events: none;
+  z-index: 20;
+  animation: cornerPulse 1.5s infinite;
+}
+.qr-corner.top-left { 
+  top: 12px;
+  left: 12px;
+  border-right: none; 
+  border-bottom: none; 
+  border-radius: 6px 0 0 0; 
+}
+.qr-corner.top-right { 
+  top: 12px;
+  right: 12px;
+  border-left: none; 
+  border-bottom: none; 
+  border-radius: 0 6px 0 0; 
+}
+.qr-corner.bottom-left { 
+  bottom: 12px;
+  left: 12px;
+  border-right: none; 
+  border-top: none; 
+  border-radius: 0 0 0 6px; 
+}
+.qr-corner.bottom-right { 
+  bottom: 12px;
+  right: 12px;
+  border-left: none; 
+  border-top: none; 
+  border-radius: 0 0 6px 0; 
+}
+@keyframes scanPulseCompact {
+  0%, 100% { box-shadow: inset 0 0 0 1000px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(6, 182, 212, 0.6); }
+  50% { box-shadow: inset 0 0 0 1000px rgba(0, 0, 0, 0.4), 0 0 15px 2px rgba(6, 182, 212, 0.8); }
+}
+@keyframes cornerPulse { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+.scan-status { padding: 14px; border-radius: 12px; transition: all .25s ease; font-weight:700; }
+.scan-status.waiting { background:#fef3c7; border:2px solid #fbbf24; color:#92400e; }
+.scan-status.success { background:#ecfdf5; border:2px solid #10b981; color:#065f46; animation: pulse-success 1.6s infinite; }
+.scan-status.error { background:#fef2f2; border:2px solid #ef4444; color:#991b1b; }
+@keyframes pulse-success { 0%{ transform: scale(1); } 50%{ transform: scale(1.02);} 100%{ transform: scale(1); } }
+.scan-status.waiting { animation: pulse 2s infinite; }
+button#startBorrowRfidScanBtn { font-weight:800; border-radius:12px; padding: 14px 20px;}
+#borrowerInfo { transition: transform .28s ease, opacity .28s ease; }
+dialog[open] { backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+</style>
 <div class="page-header">
   <h1>📖 Borrow Item</h1>
   <p>Scan RFID card and item QR code to borrow an item</p>
@@ -26,6 +134,7 @@
 </div>
 
   <dialog id="borrowToast"></dialog>
+
   <dialog id="rfidScanModal" style="border: none; border-radius: 20px; padding: 0; max-width: 90%; width: 100%; max-height: 90vh; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
     <div style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); padding: 0; border-radius: 20px; display: flex; flex-direction: column; height: 100%;">
       <!-- Modal Header -->
@@ -82,128 +191,79 @@
   <dialog id="qrScanModal" style="border: none; border-radius: 20px; padding: 0; max-width: 90%; width: 100%; max-height: 90vh; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
     <div style="background: linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%); padding: 0; border-radius: 20px; display: flex; flex-direction: column; height: 100%;">
       <!-- Modal Header -->
-      <div style="padding: 28px 28px 20px; background: linear-gradient(135deg, #a5f3fc 0%, #67e8f9 100%); border-bottom: 2px solid #06b6d4;">
-        <h2 style="margin: 0; font-size: 24px; font-weight: 800; color: #164e63; letter-spacing: 0.5px;">📷 Scan Item QR Code</h2>
-        <p style="margin: 8px 0 0 0; color: #155e75; font-size: 14px;">Point camera at the item's QR code label</p>
+      <div style="padding: 20px 24px; background: linear-gradient(135deg, #a5f3fc 0%, #67e8f9 100%); border-bottom: 2px solid #06b6d4;">
+        <h2 style="margin: 0; font-size: 22px; font-weight: 800; color: #164e63; letter-spacing: 0.5px;">📷 Scan Item QR Code</h2>
       </div>
 
       <!-- Modal Content -->
-      <div style="padding: 32px 28px; flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 24px; min-height: 0; max-height: calc(90vh - 200px);">
-        <!-- QR Reader Container -->
-        <div id="qr-reader" style="width: 100%; border: 2px solid #06b6d4; border-radius: 14px; overflow: hidden; background: #ecf9ff;"></div>
-
-        <!-- Status Message -->
-        <div class="scan-status waiting" id="qrStatus" style="padding: 16px; background: #cffafe; border: 2px solid #06b6d4; border-radius: 12px; color: #164e63; font-weight: 600; text-align: center; font-size: 15px; animation: pulse 2s infinite;">
-          📷 Point camera at QR code to scan...
+      <div style="padding: 20px 24px; flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 16px; min-height: 0; max-height: calc(90vh - 160px);">
+        <!-- QR Reader Container Wrapper -->
+        <div style="position: relative; display: flex; flex-direction: column;">
+          <!-- Corner brackets overlay -->
+          <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 30; border-radius: 14px;">
+            <div class="qr-corner top-left"></div>
+            <div class="qr-corner top-right"></div>
+            <div class="qr-corner bottom-left"></div>
+            <div class="qr-corner bottom-right"></div>
+          </div>
+          <!-- QR Reader Container -->
+          <div id="qr-reader" style="width: 100%; border: none; border-radius: 14px; overflow: hidden; background: #000; min-height: 280px; position: relative;">
+          </div>
         </div>
+
+        <!-- QR Status Message -->
+        <div id="qrStatus" style="padding: 12px; border-radius: 12px; font-weight: 700; font-size: 13px; text-align: center; color: #164e63; background: #cffafe; border: 2px solid #06b6d4; min-height: 20px;">📷 Starting camera...</div>
 
         <!-- Camera Permission Help (Hidden initially) -->
-        <div id="cameraPermissionHelp" class="hidden" style="background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); padding: 20px; border-radius: 14px; border: 2px solid #0284c7; animation: slideUp 0.4s ease;">
-          <div style="font-weight: 700; color: #0c4a6e; font-size: 16px; margin-bottom: 12px;">📷 How to Enable Camera Access:</div>
-          <ul style="margin: 8px 0; padding-left: 20px; color: #0c4a6e; font-size: 0.9rem;">
-            <li><strong>Chrome/Edge:</strong> Click the camera icon (📷) in the address bar → Allow</li>
-            <li><strong>Firefox:</strong> Click the padlock icon → Permissions → Camera → Allow</li>
-            <li><strong>Safari:</strong> Safari → Settings → Websites → Camera → Allow</li>
-            <li><strong>Mobile:</strong> Go to browser settings → Site permissions → Camera → Allow</li>
-          </ul>
-          <button type="button" id="retryCamera" class="btn btn-primary btn-lg" style="width: 100%; height: 50px; font-size: 16px; font-weight: 800; margin-top: 12px; border-radius: 12px; background: linear-gradient(135deg, #ffffff 0%, #f8fafb 100%); border: 2px solid #0284c7; color: #0c4a6e; display: flex; align-items: center; justify-content: center; gap: 10px;">
-            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="flex-shrink: 0;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-            <span style="white-space: nowrap;">Retry Camera</span>
-          </button>
+        <div id="cameraPermissionHelp" class="hidden" style="background: #fef3c7; padding: 12px; border-radius: 12px; border-left: 4px solid #f59e0b;">
+          <div style="font-weight: 700; color: #92400e; font-size: 13px; margin-bottom: 8px;">Camera access needed</div>
+          <button type="button" id="retryCamera" class="btn btn-primary btn-lg" style="width: 100%; height: 45px; font-size: 14px; font-weight: 700; border-radius: 10px; background: #06b6d4; border: none; color: white; cursor: pointer;">🔄 Enable Camera</button>
         </div>
-
-        <!-- Phone Camera Stream Option -->
-        <details style="background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); padding: 16px; border-radius: 12px; border: 2px solid #0284c7; cursor: pointer;">
-          <summary style="font-weight: 700; color: #0c4a6e; font-size: 14px; user-select: none;">📱 Use Phone Camera Stream (Alternative)</summary>
-          <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 12px;">
-            <label style="font-size: 0.9rem; color: #0c4a6e; font-weight: 600;">Phone Camera Stream URL:
-              <input type="text" id="phoneCameraUrl" placeholder="http://192.168.1.XXX:8080/video" style="width: 100%; padding: 8px; margin-top: 4px; font-size: 0.9rem; border: 2px solid #0284c7; border-radius: 8px; background: white;" />
-              <small style="display: block; margin-top: 4px; color: #0c4a6e; font-size: 0.85rem;">Install "IP Webcam" app on your phone, start server, then enter the video URL shown in the app</small>
-            </label>
-            <button type="button" id="usePhoneCamera" class="btn btn-secondary btn-lg" style="width: 100%; height: 50px; font-size: 16px; font-weight: 800; background: linear-gradient(135deg, #374151 0%, #1f2937 100%); border: 2px solid #4b5563; color: white; border-radius: 12px; display: flex; align-items: center; justify-content: center; gap: 10px;">
-              <svg width="20" height="20" fill="none" stroke="white" viewBox="0 0 24 24" style="flex-shrink: 0;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
-              <span style="white-space: nowrap;">Use Phone Camera</span>
-            </button>
-          </div>
-        </details>
-      </div>
-
-      <!-- Modal Footer -->
-      <div style="padding: 20px 28px; border-top: 2px solid #06b6d4; background: #cffafe; display: flex; gap: 12px; flex-shrink: 0;">
-        <button type="button" id="stopQrScan" class="btn btn-secondary btn-lg" style="flex: 1; height: 55px; font-size: 16px; font-weight: 700; background: linear-gradient(135deg, #374151 0%, #1f2937 100%); border: 2px solid #4b5563; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: all 0.3s ease; cursor: pointer; color: white; display: flex; align-items: center; justify-content: center; gap: 8px;">
-          <svg width="20" height="20" fill="none" stroke="white" viewBox="0 0 24 24" style="flex-shrink: 0;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-3-4.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zm-6 0a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"></path></svg>
-          <span style="white-space: nowrap;">Stop Camera</span>
-        </button>
-        <button type="button" id="backFromQr" class="btn btn-secondary btn-lg" style="flex: 1; height: 55px; font-size: 16px; font-weight: 700; background: linear-gradient(135deg, #374151 0%, #1f2937 100%); border: 2px solid #4b5563; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: all 0.3s ease; cursor: pointer; color: white; display: flex; align-items: center; justify-content: center; gap: 8px;">
-          <svg width="20" height="20" fill="none" stroke="white" viewBox="0 0 24 24" style="flex-shrink: 0;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
-          <span style="white-space: nowrap;">Back</span>
-        </button>
       </div>
     </div>
   </dialog>
 
   <dialog id="borrowToast"></dialog>
-  
-  <!-- Confirmation Dialog - Appears after both RFID and QR scanned -->
-  <dialog id="borrowConfirmDialog" style="border: none; border-radius: 20px; padding: 0; max-width: 90%; width: 500px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
-    <div style="background: linear-gradient(135deg, #ecfdf5 0%, #dbeafe 100%); padding: 0; border-radius: 20px; display: flex; flex-direction: column;">
-      <!-- Header -->
-      <div style="padding: 28px 28px 20px; background: linear-gradient(135deg, #d1fae5 0%, #a5f3fc 100%); border-bottom: 2px solid #10b981;">
+
+  <!-- Borrow Confirmation Dialog -->
+  <dialog id="borrowConfirmDialog" style="border: none; border-radius: 20px; padding: 0; max-width: 90%; width: 100%; max-height: 90vh; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+    <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); padding: 0; border-radius: 20px; display: flex; flex-direction: column; height: 100%;">
+      <!-- Modal Header -->
+      <div style="padding: 28px 28px 20px; background: linear-gradient(135deg, #a7f3d0 0%, #6ee7b7 100%); border-bottom: 2px solid #10b981;">
         <h2 style="margin: 0; font-size: 24px; font-weight: 800; color: #065f46; letter-spacing: 0.5px;">✅ Confirm Borrow</h2>
-        <p style="margin: 8px 0 0 0; color: #047857; font-size: 14px;">Please review the details below</p>
+        <p style="margin: 8px 0 0 0; color: #047857; font-size: 14px;">Please verify the borrower and item details</p>
       </div>
 
-      <!-- Content -->
-      <div style="padding: 32px 28px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px;">
+      <!-- Modal Content -->
+      <div style="padding: 32px 28px; flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 20px; min-height: 0;">
         <!-- Borrower Info -->
-        <div style="background: white; padding: 20px; border-radius: 14px; border: 2px solid #10b981; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.1);">
-          <div style="font-weight: 700; color: #065f46; font-size: 16px; margin-bottom: 12px;">📱 Borrower Information</div>
-          <div style="color: #047857; font-weight: 600;">
-            <div style="margin-bottom: 8px;">
-              <div style="font-size: 0.9rem; opacity: 0.7;">Name</div>
-              <div id="confirmBorrowerName" style="font-size: 1.1rem;">-</div>
-            </div>
-            <div>
-              <div style="font-size: 0.9rem; opacity: 0.7;">RFID Card</div>
-              <div id="confirmBorrowerRfid" class="mono" style="font-size: 1rem; word-break: break-all;">-</div>
-            </div>
-          </div>
+        <div style="background: white; padding: 20px; border-radius: 14px; border-left: 4px solid #10b981;">
+          <div style="font-weight: 700; color: #065f46; font-size: 16px; margin-bottom: 12px;">👤 Borrower Information</div>
+          <div id="confirmBorrowerName" style="color: #047857; font-weight: 600; margin-bottom: 6px;">Name: [Loading...]</div>
+          <div id="confirmBorrowerRfid" style="color: #047857; font-weight: 600; font-family: monospace;">RFID: [Loading...]</div>
         </div>
 
         <!-- Item Info -->
-        <div style="background: white; padding: 20px; border-radius: 14px; border: 2px solid #0284c7; box-shadow: 0 4px 12px rgba(2, 132, 199, 0.1);">
-          <div style="font-weight: 700; color: #164e63; font-size: 16px; margin-bottom: 12px;">📦 Item to Borrow</div>
-          <div style="color: #155e75; font-weight: 600;">
-            <div style="margin-bottom: 8px;">
-              <div style="font-size: 0.9rem; opacity: 0.7;">Item Name</div>
-              <div id="confirmItemName" style="font-size: 1.1rem;">-</div>
-            </div>
-            <div style="margin-bottom: 8px;">
-              <div style="font-size: 0.9rem; opacity: 0.7;">QR Code</div>
-              <div id="confirmItemQr" class="mono" style="font-size: 1rem; word-break: break-all; background: #f0f9ff; padding: 8px; border-radius: 8px;">-</div>
-            </div>
-            <div>
-              <div style="font-size: 0.9rem; opacity: 0.7;">Description</div>
-              <div id="confirmItemDesc" style="font-size: 0.95rem; opacity: 0.9;">-</div>
-            </div>
-          </div>
+        <div style="background: white; padding: 20px; border-radius: 14px; border-left: 4px solid #0284c7;">
+          <div style="font-weight: 700; color: #0c4a6e; font-size: 16px; margin-bottom: 12px;">📦 Item Information</div>
+          <div id="confirmItemName" style="color: #0c4a6e; font-weight: 600; margin-bottom: 6px;">Item: [Loading...]</div>
+          <div id="confirmItemQr" style="color: #0c4a6e; font-weight: 600; font-family: monospace; margin-bottom: 6px;">QR Code: [Loading...]</div>
+          <div id="confirmItemDesc" style="color: #0c4a6e; font-size: 14px;">Description: [Loading...]</div>
         </div>
 
-        <!-- Warning Message -->
-        <div style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); padding: 16px; border-radius: 12px; border: 2px solid #fbbf24; color: #92400e; font-weight: 600; text-align: center; font-size: 14px;">
-          ⚠️ Make sure the above information is correct before confirming
-        </div>
+        <!-- Custom message area -->
+        <div id="confirmBorrowMessage" style="background: #f0f9ff; padding: 16px; border-radius: 12px; border-left: 4px solid #3b82f6;"></div>
       </div>
 
-      <!-- Footer -->
-      <div style="padding: 20px 28px; border-top: 2px solid #10b981; background: #ecfdf5; display: flex; gap: 12px;">
-        <button type="button" id="confirmBorrowBtn" class="btn btn-success btn-lg" style="flex: 1; height: 55px; font-size: 16px; font-weight: 800; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: 2px solid #10b981; border-radius: 12px; box-shadow: 0 6px 20px rgba(16, 185, 129, 0.3); display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer;">
-          <svg width="22" height="22" fill="none" stroke="white" viewBox="0 0 24 24" style="flex-shrink: 0;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
-          <span style="white-space: nowrap; font-weight: 800;">Confirm Borrow</span>
+      <!-- Modal Footer -->
+      <div style="padding: 20px 28px; border-top: 2px solid #10b981; background: #ecfdf5; display: flex; gap: 12px; flex-shrink: 0;">
+        <button type="button" id="cancelBorrowBtn" class="btn btn-secondary btn-lg" style="flex: 1; height: 55px; font-size: 16px; font-weight: 700; background: linear-gradient(135deg, #374151 0%, #1f2937 100%); border: 2px solid #4b5563; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: all 0.3s ease; cursor: pointer; color: white; display: flex; align-items: center; justify-content: center; gap: 10px;">
+          <svg width="20" height="20" fill="none" stroke="white" viewBox="0 0 24 24" style="flex-shrink: 0;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          <span style="white-space: nowrap;">Cancel</span>
         </button>
-        <button type="button" id="cancelBorrowBtn" class="btn btn-secondary btn-lg" style="flex: 1; height: 55px; font-size: 16px; font-weight: 800; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; border: 2px solid #ef4444; border-radius: 12px; box-shadow: 0 6px 20px rgba(239, 68, 68, 0.3); display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer;">
-          <svg width="22" height="22" fill="none" stroke="white" viewBox="0 0 24 24" style="flex-shrink: 0;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"></path></svg>
-          <span style="white-space: nowrap; font-weight: 800;">Cancel</span>
+        <button type="button" id="confirmBorrowBtn" class="btn btn-success btn-lg" style="flex: 1; height: 55px; font-size: 16px; font-weight: 700; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: 2px solid #10b981; border-radius: 12px; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3); transition: all 0.3s ease; cursor: pointer; color: white; display: flex; align-items: center; justify-content: center; gap: 10px;">
+          <svg width="20" height="20" fill="none" stroke="white" viewBox="0 0 24 24" style="flex-shrink: 0;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+          <span style="white-space: nowrap;">Confirm Borrow</span>
         </button>
       </div>
     </div>
@@ -218,8 +278,8 @@
 
 {% block extra_js %}
 <script>
-  // Make these global so onclick attributes can find them
-  window.handleScanIdClick = function() {
+// GLOBAL HANDLERS - Must be at top
+window.handleScanIdClick = function() {
     console.log('%c🎯 handleScanIdClick CALLED', 'font-size: 16px; color: blue; font-weight: bold;');
     try {
       const modal = document.getElementById('rfidScanModal');
@@ -283,6 +343,63 @@
 
   const apiBase = '/api';
   let qrScanner = null;
+
+  // Detect if browser supports secure context (HTTPS/localhost)
+  const isSecureContext = window.isSecureContext || window.location.protocol === 'https:';
+  
+  // Handle photo capture from file input (works on HTTP)
+  document.getElementById('qrPhotoInput')?.addEventListener('change', async function(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const imageData = event.target?.result;
+        if (!imageData || typeof imageData !== 'string') return;
+
+        try {
+          document.getElementById('qrStatus').textContent = '🔍 Scanning photo for QR code...';
+          document.getElementById('qrStatus').className = 'scan-status waiting';
+
+          // Use Html5Qrcode to scan the photo
+          const result = await Html5Qrcode.scanFile(imageData, false);
+          if (result) {
+            scannedQr = result.trim();
+            document.getElementById('qrStatus').textContent = `✅ QR Code found: ${scannedQr}`;
+            document.getElementById('qrStatus').className = 'scan-status success';
+
+            // Fetch item details and show confirmation
+            try {
+              await fetchItemDetailsAndShowConfirmation(scannedQr);
+            } catch(err) {
+              console.error('Error fetching item details:', err);
+              document.getElementById('qrStatus').textContent = '❌ Item not found. Try another photo.';
+              document.getElementById('qrStatus').className = 'scan-status error';
+            }
+
+            // Close modal after successful scan
+            setTimeout(() => {
+              const qrModal = document.getElementById('qrScanModal');
+              if (qrModal && qrModal.open) qrModal.close();
+            }, 1500);
+          }
+        } catch (err) {
+          console.error('QR scan error:', err);
+          document.getElementById('qrStatus').textContent = '❌ No QR code found in photo. Try another angle.';
+          document.getElementById('qrStatus').className = 'scan-status error';
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Photo processing error:', err);
+      document.getElementById('qrStatus').textContent = '❌ Could not process photo. Try again.';
+      document.getElementById('qrStatus').className = 'scan-status error';
+    }
+
+    // Reset input so same file can be selected again
+    e.target.value = '';
+  });
   let scannedRfid = '';
   let scannedQr = '';
   let rfidProcessing = false;
@@ -320,13 +437,49 @@
     try {
       console.log('📡 Fetching item details for QR:', qrCode);
       const res = await fetch(`${apiBase}/items?q=${encodeURIComponent(qrCode)}`);
+      
+      if (!res.ok) {
+        throw new Error(`Server error: ${res.status}`);
+      }
+      
       const items = await res.json();
+      console.log('📦 Items response:', items);
+      
+      if (!Array.isArray(items) || items.length === 0) {
+        console.log('❌ No items found in response');
+        showToast(document.getElementById('borrowToast'), '❌ Item QR code not found in system');
+        scannedQr = '';
+        qrScannerProcessing = false;
+        return;
+      }
       
       // Find exact match
       const item = items.find(i => i.qr_code && i.qr_code.toUpperCase() === qrCode.toUpperCase());
       
       if (item) {
         console.log('✅ Item found:', item.name);
+        
+        // Check if item is already borrowed
+        if (item.current_borrower || item.borrowed_by) {
+          console.log('⚠️ Item already borrowed by:', item.current_borrower || item.borrowed_by);
+          showToast(document.getElementById('borrowToast'), `⚠️ "${item.name}" is already borrowed. Please return it first.`);
+          scannedQr = '';
+          qrScannerProcessing = false;
+          return;
+        }
+        
+        // Check if borrower RFID has been scanned
+        if (!scannedRfid || !borrowerData) {
+          console.log('⚠️ RFID not scanned yet');
+          showToast(document.getElementById('borrowToast'), '⚠️ Please scan the student ID card first, then scan the item QR code');
+          scannedQr = '';
+          qrScannerProcessing = false;
+          // Auto-open RFID modal for user
+          const rfidModal = document.getElementById('rfidScanModal');
+          if (rfidModal) rfidModal.showModal();
+          return;
+        }
+        
         // Update confirmation dialog
         document.getElementById('confirmBorrowerName').textContent = borrowerData?.name || scannedRfid;
         document.getElementById('confirmBorrowerRfid').textContent = scannedRfid;
@@ -338,14 +491,18 @@
         const confirmDialog = document.getElementById('borrowConfirmDialog');
         confirmDialog.showModal();
       } else {
-        console.log('❌ Item not found');
-        document.getElementById('qrStatus').textContent = '❌ Item not found in system';
-        document.getElementById('qrStatus').className = 'scan-status error';
+        console.log('❌ Item QR not found in results');
+        showToast(document.getElementById('borrowToast'), '❌ Item QR code not found in system');
+        scannedQr = '';
+        qrScannerProcessing = false;
       }
     } catch (err) {
       console.error('Error fetching item:', err);
-      document.getElementById('qrStatus').textContent = '❌ Error fetching item details';
-      document.getElementById('qrStatus').className = 'scan-status error';
+      showToast(document.getElementById('borrowToast'), '❌ Error: ' + (err.message || 'Could not fetch item details'));
+      scannedQr = '';
+      qrScannerProcessing = false;
+      document.getElementById('qrStatus').textContent = '📷 Camera active. Point at QR code...';
+      document.getElementById('qrStatus').className = 'scan-status waiting';
     }
   }
 
@@ -387,14 +544,18 @@
     newConfirmBtn.onclick = async () => {
       confirmDialog.close();
       try {
+        const tokenToSend = csrfToken || (document.cookie.match(/csrftoken=([^;]+)/)||[])[1] || '';
+        if (!tokenToSend) console.warn('No CSRF token found for borrow');
         const res = await fetch(`${apiBase}/borrow`, {
           method: 'POST',
+          credentials: 'same-origin',
           headers: {
             'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken || ''
+            'X-CSRFToken': tokenToSend
           },
           body: JSON.stringify({ borrower_rfid: scannedRfid, item_qr: scannedQr })
         });
+        if (res.status === 403) console.error('Borrow 403; csrftoken cookie=', (document.cookie.match(/csrftoken=([^;]+)/)||[])[1], 'sent header=', tokenToSend);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.detail || 'Borrow failed');
         showToast(toast, '✅ Borrowed successfully! Redirecting...');
@@ -413,12 +574,6 @@
     confirmDialog.showModal();
   }
 
-  function escapeHtml(value) {
-    const div = document.createElement('div');
-    div.textContent = value ?? '';
-    return div.innerHTML;
-  }
-
   function resetBorrowFlow() {
     scannedRfid = '';
     scannedQr = '';
@@ -433,12 +588,7 @@
     document.getElementById('borrowerDetails').innerHTML = '';
     document.getElementById('rfidConfirmSection').classList.add('hidden');
     stopBorrowRfidScan();
-    if (qrScanner) {
-      qrScanner.stop().then(() => {
-        qrScanner.clear();
-        qrScanner = null;
-      }).catch(() => {});
-    }
+    // Don't stop QR scanner - keep it running for next scan
     showStep(1);
   }
   
@@ -459,9 +609,14 @@
     }
   }
 
+  let qrScannerProcessing = false; // Flag to prevent duplicate processing
+  
   async function startQrScanner(usePhoneCameraUrl = null) {
     try {
       const qrReader = document.getElementById('qr-reader');
+      console.log('🎬 startQrScanner called, isSecureContext:', isSecureContext);
+      
+      // Clear previous scanner content
       qrReader.innerHTML = '';
       
       // If using phone camera URL, create video element and scan frames
@@ -478,8 +633,6 @@
         video.style.borderRadius = '12px';
         video.style.display = 'block';
         
-        const qrReader = document.getElementById('qr-reader');
-        qrReader.innerHTML = '';
         qrReader.appendChild(video);
         
         // Create canvas to capture frames
@@ -511,16 +664,21 @@
                   document.getElementById('qrStatus').textContent = `✅ QR Code scanned: ${scannedQr}`;
                   document.getElementById('qrStatus').className = 'scan-status success';
                   video.pause();
-                  
-                  if (scannedRfid && scannedQr) {
-                    document.getElementById('reviewBorrowerName').textContent = borrowerData?.name || scannedRfid;
-                    document.getElementById('reviewRfid').textContent = scannedRfid;
-                    document.getElementById('reviewQr').textContent = scannedQr;
-                    showStep(4);
-                    setTimeout(() => {
-                      document.querySelector('#borrowForm button[type="submit"]').focus();
-                    }, 100);
+
+                  // Stop scanner and clear references
+                  try { clearInterval(scanInterval); } catch(e) {}
+                  try { qrScanner._video = null; } catch(e) {}
+
+                  // Immediately show item details / confirmation (same behavior as return page)
+                  try {
+                    await fetchItemDetailsAndShowConfirmation(scannedQr);
+                  } catch(e) {
+                    console.error('Error fetching item details:', e);
                   }
+
+                  // Close QR modal when an item is found or after scan
+                  const qrModal = document.getElementById('qrScanModal');
+                  if (qrModal && qrModal.open) qrModal.close();
                 }
               } catch (e) {
                 // No QR code found, continue scanning
@@ -541,13 +699,24 @@
         return;
       }
       
-      // Regular camera access
+      // Regular camera access - only on HTTPS
+      if (!isSecureContext) {
+        console.log('⚠️ Not secure context, showing HTTPS required message');
+        document.getElementById('qrStatus').innerHTML = '⚠️ <strong>Live camera requires HTTPS.</strong><br/>Use the photo capture option above instead.';
+        document.getElementById('qrStatus').className = 'scan-status error';
+        document.getElementById('qr-reader').innerHTML = '<div style="padding: 40px; text-align: center; color: #f5f5f5; font-size: 14px;"><p style="margin: 0;">📸 Live camera access requires HTTPS</p><p style="margin: 8px 0 0 0; font-size: 12px; opacity: 0.7;">Use the photo capture option instead</p></div>';
+        return;
+      }
+
       // Check camera permissions
       try {
+        console.log('🎥 Requesting camera permissions...');
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         stream.getTracks().forEach(track => track.stop()); // Stop immediately, we just wanted to check
         document.getElementById('cameraPermissionHelp').classList.add('hidden');
+        console.log('✅ Camera permissions granted');
       } catch (permErr) {
+        console.error('❌ Camera permission error:', permErr);
         document.getElementById('qrStatus').textContent = '❌ Camera permission denied. Please allow camera access.';
         document.getElementById('qrStatus').className = 'scan-status error';
         document.getElementById('cameraPermissionHelp').classList.remove('hidden');
@@ -557,65 +726,194 @@
       document.getElementById('qrStatus').textContent = '📷 Starting camera...';
       document.getElementById('qrStatus').className = 'scan-status waiting';
       
+      // Get available cameras
+      console.log('🔍 Enumerating cameras...');
+      let cameras = [];
+      try {
+        cameras = await Html5Qrcode.getCameras();
+        console.log('📹 Found cameras:', cameras);
+      } catch (e) {
+        console.error('❌ Error enumerating cameras:', e);
+        cameras = [];
+      }
+      
+      if (!cameras || cameras.length === 0) {
+        console.error('❌ No cameras found');
+        document.getElementById('qrStatus').textContent = '❌ No camera found on this device.';
+        document.getElementById('qrStatus').className = 'scan-status error';
+        document.getElementById('qr-reader').innerHTML = '<div style="padding: 40px; text-align: center; color: #f5f5f5;"><p>No camera found</p></div>';
+        return;
+      }
+
+      // Create scanner instance
+      console.log('📱 Creating Html5Qrcode instance...');
       qrScanner = new Html5Qrcode('qr-reader');
       
-      // Try back camera first, fallback to any camera
-      let cameraId = null;
+      // Calculate qrbox size - larger for better detection
+      const readerWidth = qrReader.clientWidth || Math.floor(qrReader.getBoundingClientRect().width) || Math.floor(window.innerWidth * 0.8);
+      const qrboxSize = Math.min(320, readerWidth - 10);
+      
+      const scanConfig = {
+        fps: 25,
+        qrbox: { width: qrboxSize, height: qrboxSize },
+        disableFlip: false,
+        rememberLastUsedCamera: true,
+        aspectRatio: 1.0
+      };
+      
+      // Try with different camera configurations for laptop
+      let cameraConfig = { facingMode: 'environment' };
+      
+      console.log('🎬 Starting scanner with config:', scanConfig);
+
+      // Start scanning with camera
       try {
-        const devices = await Html5Qrcode.getCameras();
-        if (devices && devices.length > 0) {
-          // Prefer back camera
-          const backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('rear'));
-          cameraId = backCamera ? backCamera.id : devices[0].id;
-        }
-      } catch (e) {
-        console.log('Could not enumerate cameras, using default');
-      }
-      
-      const config = cameraId 
-        ? { deviceId: { exact: cameraId } }
-        : { facingMode: 'environment' };
-      
-      await qrScanner.start(
-        config,
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        async (decodedText) => {
-          scannedQr = decodedText.trim();
-          document.getElementById('qrStatus').textContent = `✅ QR Code scanned: ${scannedQr}`;
-          document.getElementById('qrStatus').className = 'scan-status success';
-          qrScanner.stop().then(() => {
-            qrScanner.clear();
-            qrScanner = null;
-          }).catch(() => {});
-          
-          if (scannedRfid && scannedQr) {
-            console.log('🎯 Both RFID and QR scanned, fetching item details...');
-            fetchItemDetailsAndShowConfirmation(scannedQr);
+        qrScannerProcessing = false; // Reset processing flag
+        
+        try {
+          await qrScanner.start(
+            cameraConfig,
+            scanConfig,
+            async (decodedText, decodedResult) => {
+              if (qrScannerProcessing) return;
+              if (!decodedText || decodedText.trim().length === 0) return;
+              
+              if (scannedQr === decodedText.trim()) return;
+              
+              qrScannerProcessing = true;
+              scannedQr = decodedText.trim();
+              console.log('✅ QR Code scanned:', scannedQr);
+              
+              document.getElementById('qrStatus').textContent = `✅ QR Code found: ${scannedQr}`;
+              document.getElementById('qrStatus').className = 'scan-status success';
+              
+              // Stop scanner
+              if (qrScanner) {
+                try { 
+                  qrScanner.stop().then(() => {
+                    if (qrScanner && qrScanner.clear) qrScanner.clear();
+                    qrScanner = null;
+                  }).catch(() => {
+                    qrScanner = null;
+                  }); 
+                } catch(e) { console.error('Error stopping scanner:', e); qrScanner = null; }
+              }
+
+              // Close the QR modal
+              const qrModal = document.getElementById('qrScanModal');
+              if (qrModal && qrModal.open) {
+                qrModal.close();
+              }
+
+              // Fetch item details
+              try {
+                await fetchItemDetailsAndShowConfirmation(scannedQr);
+              } catch(e) {
+                console.error('Error fetching item details:', e);
+                showToast(document.getElementById('borrowToast'), '❌ Error: ' + (e.message || 'Could not fetch item details'));
+                qrScannerProcessing = false;
+                scannedQr = null;
+                setTimeout(() => {
+                  if (qrScanner) {
+                    try { qrScanner.stop().catch(() => {}); } catch(e) {}
+                  }
+                  startQrScanner();
+                }, 2000);
+              }
+            },
+            (errorMessage) => {
+              // Ignore scanning errors
+            }
+          );
+          console.log('✅ Scanner started successfully');
+          document.getElementById('qrStatus').textContent = '📷 Camera active. Point at QR code...';
+          document.getElementById('qrStatus').className = 'scan-status waiting';
+        } catch (startErr) {
+          // If environment camera fails, try without facingMode (fallback for laptops)
+          console.log('Environment camera failed, trying fallback config...');
+          if (startErr.name === 'NotReadableError' || startErr.name === 'ConstraintNotSatisfiedError') {
+            try {
+              await qrScanner.start(
+                {},
+                scanConfig,
+                async (decodedText, decodedResult) => {
+                  if (qrScannerProcessing) return;
+                  if (!decodedText || decodedText.trim().length === 0) return;
+                  
+                  if (scannedQr === decodedText.trim()) return;
+                  
+                  qrScannerProcessing = true;
+                  scannedQr = decodedText.trim();
+                  console.log('✅ QR Code scanned:', scannedQr);
+                  
+                  document.getElementById('qrStatus').textContent = `✅ QR Code found: ${scannedQr}`;
+                  document.getElementById('qrStatus').className = 'scan-status success';
+                  
+                  if (qrScanner) {
+                    try { 
+                      qrScanner.stop().then(() => {
+                        if (qrScanner && qrScanner.clear) qrScanner.clear();
+                        qrScanner = null;
+                      }).catch(() => {
+                        qrScanner = null;
+                      }); 
+                    } catch(e) { console.error('Error stopping scanner:', e); qrScanner = null; }
+                  }
+
+                  // Close the QR modal
+                  const qrModal = document.getElementById('qrScanModal');
+                  if (qrModal && qrModal.open) {
+                    qrModal.close();
+                  }
+
+                  try {
+                    await fetchItemDetailsAndShowConfirmation(scannedQr);
+                  } catch(e) {
+                    console.error('Error fetching item details:', e);
+                    showToast(document.getElementById('borrowToast'), '❌ Error: ' + (e.message || 'Could not fetch item details'));
+                    qrScannerProcessing = false;
+                    scannedQr = null;
+                    setTimeout(() => {
+                      if (qrScanner) {
+                        try { qrScanner.stop().catch(() => {}); } catch(e) {}
+                      }
+                      startQrScanner();
+                    }, 2000);
+                  }
+                },
+                (errorMessage) => {}
+              );
+              console.log('✅ Fallback scanner started');
+              document.getElementById('qrStatus').textContent = '📷 Camera active. Point at QR code...';
+              document.getElementById('qrStatus').className = 'scan-status waiting';
+            } catch (fallbackErr) {
+              throw fallbackErr;
+            }
+          } else {
+            throw startErr;
           }
-        },
-        (errorMessage) => {
-          // Ignore scanning errors (these are normal while scanning)
         }
-      );
-      
-      document.getElementById('qrStatus').textContent = '📷 Camera ready. Point at QR code...';
-      document.getElementById('qrStatus').className = 'scan-status waiting';
-    } catch (err) {
-      let errorMsg = 'Camera error: ';
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        errorMsg = '❌ Camera permission denied. Please allow camera access and try again.';
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        errorMsg = '❌ No camera found. Please connect a camera device.';
-      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        errorMsg = '❌ Camera is already in use by another application.';
-      } else if (err.message) {
-        errorMsg = '❌ Camera error: ' + err.message;
-      } else if (err.toString) {
-        errorMsg = '❌ Camera error: ' + err.toString();
-      } else {
-        errorMsg = '❌ Unable to access camera. Please check your browser settings and try again.';
+      } catch (err) {
+        let errorMsg = 'Camera error: ';
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          errorMsg = '❌ Camera permission denied. Please allow camera access and try again.';
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          errorMsg = '❌ No camera found. Please connect a camera device.';
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          errorMsg = '❌ Camera is already in use by another application.';
+        } else if (err.message) {
+          errorMsg = '❌ Camera error: ' + err.message;
+        } else if (err.toString) {
+          errorMsg = '❌ Camera error: ' + err.toString();
+        } else {
+          errorMsg = '❌ Unable to access camera. Please check your browser settings and try again.';
+        }
+        document.getElementById('qrStatus').textContent = errorMsg;
+        document.getElementById('qrStatus').className = 'scan-status error';
       }
-      document.getElementById('qrStatus').textContent = errorMsg;
+    } catch (outerErr) {
+      console.error('Outer error in startQrScanner:', outerErr);
+      document.getElementById('qrStatus').textContent = '❌ Unexpected error starting scanner';
       document.getElementById('qrStatus').className = 'scan-status error';
     }
   }
@@ -659,24 +957,6 @@
     borrowForm.addEventListener('submit', borrowAction);
   }
   
-  // QR Modal - Back button closes modal and returns to RFID selection
-  document.getElementById('backFromQr').addEventListener('click', () => {
-    console.log('👈 Back from QR modal clicked');
-    stopQrScanner();
-    scannedQr = '';
-    
-    const modal = document.getElementById('qrScanModal');
-    if (modal && modal.open) {
-      console.log('Closing QR modal');
-      modal.close();
-    }
-  });
-
-  // QR Modal - Stop camera button
-  document.getElementById('stopQrScan').addEventListener('click', () => {
-    stopQrScanner();
-  });
-
   // QR Modal - Retry camera button
   document.getElementById('retryCamera').addEventListener('click', () => {
     startQrScanner();
@@ -839,14 +1119,19 @@
       }
       
       if (data.id === borrowLastScanId) {
-        console.log('🔄 Same RFID scan as before, skipping');
-        return;
-      }
-      borrowLastScanId = data.id;
-      console.log('📱 New RFID detected:', data.uid);
-      
-      if (data.uid && data.uid.trim().length >= 4) {
-        await processRfidScan(data.uid);
+        // same id, ignore
+      } else {
+        borrowLastScanId = data.id;
+        console.log('📱 New RFID detected:', data.uid);
+        if (data.uid && data.uid.trim().length >= 4) {
+          const statusEl = document.getElementById('rfidStatus');
+          if (statusEl) {
+            statusEl.textContent = '📱 Card detected: ' + data.uid;
+            statusEl.className = 'scan-status success';
+          }
+          // Immediately process the RFID scan and avoid duplicate polling
+          await processRfidScan(data.uid);
+        }
       }
     } catch (err) {
       console.log('⚠️ Polling error:', err.message);
@@ -888,15 +1173,15 @@
           borrowLastScanId = data.id;
           console.log('✅ Current RFID scan ID set to:', data.id);
         }
-        console.log('⏱️ Starting polling interval (2000ms)');
+        console.log('⏱️ Starting polling interval (700ms)');
         pollBorrowRfidScan();
-        borrowPollInterval = setInterval(pollBorrowRfidScan, 2000);
+        borrowPollInterval = setInterval(pollBorrowRfidScan, 700);
       })
       .catch((err) => {
         console.log('⚠️ Fetch error (non-fatal):', err.message);
-        console.log('⏱️ Starting polling interval anyway (2000ms)');
+        console.log('⏱️ Starting polling interval anyway (700ms)');
         pollBorrowRfidScan();
-        borrowPollInterval = setInterval(pollBorrowRfidScan, 2000);
+        borrowPollInterval = setInterval(pollBorrowRfidScan, 700);
       });
   }
   
@@ -978,14 +1263,17 @@
       confirmDialog.close();
       
       try {
+        const tokenToSend = csrfToken || (document.cookie.match(/csrftoken=([^;]+)/)||[])[1] || '';
+        if (!tokenToSend) console.warn('No CSRF token found for borrow');
         const res = await fetch(`${apiBase}/borrow`, {
-          method: 'POST',
+          method: 'POST', credentials: 'same-origin',
           headers: {
             'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken || ''
+            'X-CSRFToken': tokenToSend
           },
           body: JSON.stringify({ borrower_rfid: scannedRfid, item_qr: scannedQr })
         });
+        if (res.status === 403) console.error('Borrow 403; csrftoken cookie=', (document.cookie.match(/csrftoken=([^;]+)/)||[])[1], 'sent header=', tokenToSend);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.detail || 'Borrow failed');
         

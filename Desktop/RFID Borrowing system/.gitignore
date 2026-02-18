@@ -35,6 +35,8 @@ ssl_certs/*.crt
 .vscode/
 .idea/
 *.swp
+.pio_compile/
+.qodo/
 
 # OS files
 .DS_Store
@@ -53,3 +55,49 @@ node_modules/
 staticfiles/
 build/
 dist/
+# Exclude documentation and unnecessary files
+*.txt
+*.md
+!README.md
+*.pdf
+*.bib
+*.aux
+*.bbl
+*.blg
+*.log
+*.dvi
+*.ps
+
+# Exclude temporary files
+tmp_*.js
+tmp_*.json
+tmp_*.html
+tmp_*.txt
+test_*.py
+*.bat
+*.sh
+start_*.ps1
+https_quick_start.sh
+https_quick_start.bat
+run_*.py
+run_*.bat
+diagnose.py
+check_syntax.py
+validate_html.py
+extract_ca_cert.py
+generate_ssl_cert.py
+cleanup_test_data.py
+
+# Exclude tool/script files
+tools/
+docs/
+figures/
+logs/
+
+# LaTeX and research files
+*.tex
+*.aux
+*.bbl
+*.blg
+*.out
+*.log

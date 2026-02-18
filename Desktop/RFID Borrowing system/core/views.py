@@ -15,14 +15,22 @@ from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.shortcuts import render
 
 import qrcode
+import logging
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+import concurrent.futures
+import socket
+import urllib.request
+import urllib.error
+from typing import List, Dict
 
 from .models import Borrower, Item, BorrowTransaction, RFIDScan
+from .models import DeviceConfig, DeviceInstance
 from .serializers import (
     BorrowerSerializer,
     ItemSerializer,
@@ -34,7 +42,13 @@ from .serializers import (
     ItemRegistrationSerializer,
     RFIDScanSerializer,
     RFIDScanCreateSerializer,
+    DeviceConfigSerializer,
+    DeviceConfigForDeviceSerializer,
+    DeviceInstanceSerializer,
 )
+from .models import DeviceConfig
+from .auth import DeviceTokenAuthentication
+from rest_framework.exceptions import AuthenticationFailed
 
 
 class BorrowCreateView(APIView):
@@ -311,9 +325,25 @@ class RFIDScanView(APIView):
         return Response(RFIDScanSerializer(scan).data)
 
     def post(self, request):
+        # Allow unauthenticated scans for development/local use
+        # In production, you could add authentication here
+        
         serializer = RFIDScanCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         scan = RFIDScan.objects.create(**serializer.validated_data)
+
+        # Update device telemetry if authenticated
+        try:
+            auth = DeviceTokenAuthentication()
+            res = auth.authenticate(request)
+            if res:
+                device, _ = res
+                device.server_reachable = True
+                device.last_wifi_event = 'scan_post'
+                device.save(update_fields=["server_reachable", "last_wifi_event", "last_seen"])
+        except:
+            # No authentication, but that's okay for scans
+            pass
 
         excess_ids = list(
             RFIDScan.objects.order_by("-created_at").values_list("id", flat=True)[200:]
@@ -322,6 +352,510 @@ class RFIDScanView(APIView):
             RFIDScan.objects.filter(id__in=excess_ids).delete()
 
         return Response(RFIDScanSerializer(scan).data, status=status.HTTP_201_CREATED)
+
+
+class DeviceConfigView(APIView):
+    """Get / update the device (ESP32) configuration used by the web app.
+
+    GET: returns current DeviceConfig (creates empty one if missing)
+    POST: updates values (admin only)
+    """
+    def get(self, request):
+        obj, _ = DeviceConfig.objects.get_or_create(id=1)
+        # If a device authenticates using X-Device-Token, return plaintext password + ssid
+        try:
+            auth = DeviceTokenAuthentication()
+            res = auth.authenticate(request)
+            if res:
+                device, _ = res
+                serializer = DeviceConfigForDeviceSerializer(obj)
+                return Response(serializer.data)
+        except AuthenticationFailed:
+            # Invalid token -> treat as anonymous (do not reveal password)
+            pass
+
+        return Response(DeviceConfigSerializer(obj).data)
+
+    def post(self, request):
+        if not request.user.is_staff:
+            return Response({"detail": "Admin access required."}, status=status.HTTP_403_FORBIDDEN)
+
+        obj, _ = DeviceConfig.objects.get_or_create(id=1)
+        serializer = DeviceConfigSerializer(obj, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
+class DeviceInstanceView(APIView):
+    """Endpoint for ESPs to register themselves and for UI to list devices.
+
+    POST: an ESP can POST { ip, ssid, api_host, firmware } to register/update its record.
+    GET: returns list of registered devices (recent first).
+    """
+    def get(self, request):
+        devices = DeviceInstance.objects.all()[:50]
+        return Response(DeviceInstanceSerializer(devices, many=True, context={'request': request}).data)
+
+    def post(self, request):
+        data = request.data or {}
+        ip = data.get('ip') or request.META.get('REMOTE_ADDR')
+        if not ip:
+            return Response({"detail": "IP required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        obj, _ = DeviceInstance.objects.update_or_create(
+            ip=ip,
+            defaults={
+                'ssid': data.get('ssid', '')[:128],
+                'api_host': data.get('api_host', '')[:256],
+                'firmware': data.get('firmware', '')[:64],
+                'pairing_code': data.get('pairing_code', '')[:32],
+                'last_wifi_event': data.get('wifi_event', '')[:64],
+                'last_rssi': data.get('rssi'),
+                'last_disconnect_reason': data.get('disconnect_reason', '')[:128],
+                'server_reachable': bool(data.get('server_reachable', False)),
+            }
+        )
+        return Response(DeviceInstanceSerializer(obj, context={'request': request}).data, status=status.HTTP_200_OK)
+
+
+class TestApiHostView(APIView):
+    """POST: { url: 'http://host:port/' } - server-side reachability test for an API host."""
+    def post(self, request):
+        url = (request.data.get('url') or '').strip()
+        if not url:
+            return Response({"detail": "url required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        import urllib.request, urllib.error, socket
+        try:
+            req = urllib.request.Request(url, method='GET')
+            with urllib.request.urlopen(req, timeout=6) as r:
+                return Response({"status": "ok", "code": r.getcode()})
+        except socket.timeout:
+            return Response({"detail": "Timed out contacting host"}, status=status.HTTP_504_GATEWAY_TIMEOUT)
+        except urllib.error.URLError as e:
+            # Provide friendlier messages for common failure modes
+            reason = getattr(e, 'reason', None)
+            try:
+                import errno as _errno
+                if isinstance(reason, ConnectionRefusedError) or (isinstance(reason, OSError) and getattr(reason, 'errno', None) in (_errno.ECONNREFUSED, getattr(_errno, 'WSAECONNREFUSED', None))):
+                    return Response({"detail": "Connection refused: no service listening at that host/port"}, status=status.HTTP_502_BAD_GATEWAY)
+                if isinstance(reason, socket.gaierror):
+                    return Response({"detail": "Name resolution failed (host not found)"}, status=status.HTTP_502_BAD_GATEWAY)
+            except Exception:
+                # fall through to generic message
+                pass
+            detail = str(reason) if reason else str(e)
+            return Response({"detail": detail}, status=status.HTTP_502_BAD_GATEWAY)
+        except ValueError as e:
+            # malformed URL or similar client-side issues
+            return Response({"detail": "Invalid URL: " + str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+class PingView(APIView):
+    """Simple health check endpoint for devices/tools to verify server reachability."""
+    def get(self, request):
+        return Response({"status": "ok"}, status=status.HTTP_200_OK)
+
+
+class ClaimDeviceView(APIView):
+    """Allow an authenticated user to claim a device by providing the pairing code."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        device_id = request.data.get('device_id')
+        code = (request.data.get('pairing_code') or '').strip()
+        if not device_id or not code:
+            return Response({"detail": "device_id and pairing_code required"}, status=status.HTTP_400_BAD_REQUEST)
+        device = get_object_or_404(DeviceInstance, id=device_id)
+        if device.pairing_code and code == device.pairing_code:
+            device.claimed_by = request.user
+            device.claimed_at = timezone.now()
+            device.save(update_fields=['claimed_by', 'claimed_at'])
+            return Response(DeviceInstanceSerializer(device, context={'request': request}).data)
+        return Response({"detail": "Invalid pairing code"}, status=status.HTTP_403_FORBIDDEN)
+
+
+class DeviceInstanceTokenView(APIView):
+    """Allow a device owner or admin to retrieve or regenerate the device token."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        device_id = request.data.get('device_id')
+        regenerate = bool(request.data.get('regenerate', True))
+        if not device_id:
+            return Response({"detail": "device_id required"}, status=status.HTTP_400_BAD_REQUEST)
+        device = get_object_or_404(DeviceInstance, id=device_id)
+        # Only owner or staff can request/regenerate token
+        if not (request.user.is_staff or (device.claimed_by and device.claimed_by == request.user)):
+            return Response({"detail": "Only device owner or admin can generate token."}, status=status.HTTP_403_FORBIDDEN)
+        if regenerate:
+            token = device.regenerate_token()
+        else:
+            token = device.api_token
+        return Response({"api_token": token})
+
+
+def push_config_to_target(target_ip, retries: int = 3, reboot_on_reset: bool = False):
+    """Helper that posts the canonical DeviceConfig to the target device ip and returns a tuple (ok_bool, response_or_detail, http_code).
+
+    Performs a lightweight TCP probe to ensure the device is reachable quickly, increases the POST timeout, and retries transient errors.
+    """
+    obj, _ = DeviceConfig.objects.get_or_create(id=1)
+    payload = {
+        'ssid': obj.ssid or '',
+        'password': obj.get_password() or '',
+        'api_host': obj.api_host or ''
+    }
+    import urllib.request, json, urllib.error, socket, time, errno
+    url = f"http://{target_ip}/apply-config"
+    data = json.dumps(payload).encode('utf-8')
+    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'}, method='POST')
+
+    # Quick TCP-level probe to fail fast if device is offline/unreachable
+    try:
+        sock = socket.create_connection((target_ip, 80), timeout=3)
+        sock.close()
+    except Exception as e:
+        logging.warning("Push to %s TCP connect failed: %s", target_ip, e)
+        return False, f"TCP connect failed: {e}", 502
+
+    # Lightweight HTTP GET probe before POST to detect flaky HTTP servers
+    try:
+        probe_req = urllib.request.Request(f'http://{target_ip}/', method='GET')
+        with urllib.request.urlopen(probe_req, timeout=2) as _:
+            logging.debug('Pre-POST GET probe to %s succeeded', target_ip)
+    except Exception as e:
+        # Not fatal; log and continue. Some devices may only accept POST or briefly reset when Wi-Fi changes.
+        logging.debug('Pre-POST GET probe to %s failed (continuing): %s', target_ip, e)
+
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            # Increase timeout a bit for noisy networks
+            with urllib.request.urlopen(req, timeout=20) as r:
+                resp_body = r.read().decode('utf-8')
+                return True, {'code': r.getcode(), 'body': resp_body}, r.getcode()
+        except socket.timeout as e:
+            logging.warning("Push to %s timed out (attempt %d/%d): %s", target_ip, attempt, retries + 1, e)
+            detail = "Timed out connecting to device"
+            code = 504
+        except urllib.error.URLError as e:
+            # Check for wrapped OSError/ConnectionResetError reasons
+            reason = getattr(e, 'reason', None)
+            if isinstance(reason, ConnectionResetError) or (isinstance(reason, OSError) and getattr(reason, 'errno', None) == errno.WSAECONNRESET):
+                logging.warning("Push to %s connection reset (attempt %d/%d): %s", target_ip, attempt, retries + 1, reason)
+                detail = f"Connection reset by device (attempt {attempt}/{retries + 1}): {reason}"
+                code = 502
+                # Optional: if requested, try to reboot the device once and then retry
+                if reboot_on_reset and attempt == 1:
+                    try:
+                        logging.info('Attempting reboot on %s due to connection reset', target_ip)
+                        rb_ok, rb_resp, rb_code = push_command_to_target(target_ip, 'reboot')
+                        if rb_ok:
+                            logging.info('Reboot command accepted by %s; waiting briefly before retry', target_ip)
+                            time.sleep(5)
+                            # update detail with reboot info
+                            detail += f' (reboot attempted, code={rb_code})'
+                        else:
+                            logging.warning('Reboot command to %s failed: %s', target_ip, rb_resp)
+                            detail += f' (reboot attempt failed: {rb_resp})'
+                    except Exception as _e:
+                        logging.exception('Error attempting reboot on %s', target_ip)
+                        detail += f' (reboot attempt exception: {_e})'
+            else:
+                logging.warning("Push to %s URL error (attempt %d/%d): %s", target_ip, attempt, retries + 1, e)
+                detail = str(reason) if reason else str(e)
+                code = 502
+        except OSError as e:
+            # Direct OSError (e.g., ConnectionResetError propagated)
+            if isinstance(e, ConnectionResetError) or getattr(e, 'errno', None) == errno.WSAECONNRESET:
+                logging.warning("Push to %s connection reset OSError (attempt %d/%d): %s", target_ip, attempt, retries + 1, e)
+                detail = "Connection reset by device"
+                code = 502
+            else:
+                logging.exception("OSError when pushing config to %s", target_ip)
+                detail = str(e)
+                code = 502
+        except Exception as e:
+            logging.exception("Unexpected error pushing config to %s (attempt %d/%d)", target_ip, attempt, retries + 1)
+            detail = str(e)
+            code = 502
+
+        # Retry logic for transient errors (timeout/temporary URLError)
+        if attempt <= retries and code in (504, 502):
+            time.sleep(0.8 * attempt)  # small backoff
+            continue
+
+        return False, detail, code
+
+
+def push_command_to_target(target_ip, action: str, payload: dict = None, timeout: int = 10):
+    """POST a control command to the target device at /control. Returns (ok, detail, code)."""
+    import urllib.request, urllib.error, json, socket
+    url = f"http://{target_ip}/control"
+    body = {'action': action}
+    if payload:
+        body.update(payload)
+    data = json.dumps(body).encode('utf-8')
+    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'}, method='POST')
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            resp_body = r.read().decode('utf-8')
+            return True, {'code': r.getcode(), 'body': resp_body}, r.getcode()
+    except socket.timeout:
+        logging.warning('Command %s to %s timed out', action, target_ip)
+        return False, 'Timed out contacting device', 504
+    except urllib.error.HTTPError as e:
+        # Capture the HTTP status and any body the device returned
+        try:
+            body = e.read().decode('utf-8', errors='ignore')
+        except Exception:
+            body = None
+        logging.warning('HTTPError from %s for %s: %s %s', target_ip, action, e.code, body)
+        # Fallback: some devices expose a /reboot endpoint instead of /control for reboot action
+        if action.lower() == 'reboot':
+            # Try multiple fallback strategies to trigger a reboot on various firmwares
+            fallbacks = []
+            # Try POST /reboot with empty JSON
+            fallbacks.append(('POST /reboot (empty JSON)', f'http://{target_ip}/reboot', 'application/json', json.dumps({}).encode('utf-8')))
+            # Try POST /control with common alternative json fields
+            fallbacks.append(('POST /control json cmd', f'http://{target_ip}/control', 'application/json', json.dumps({'cmd':'reboot'}).encode('utf-8')))
+            fallbacks.append(('POST /control json command', f'http://{target_ip}/control', 'application/json', json.dumps({'command':'reboot'}).encode('utf-8')))
+            fallbacks.append(('POST /control json action=restart', f'http://{target_ip}/control', 'application/json', json.dumps({'action':'restart'}).encode('utf-8')))
+            # Form-encoded
+            fallbacks.append(('POST /control form action=reboot', f'http://{target_ip}/control', 'application/x-www-form-urlencoded', 'action=reboot'.encode('utf-8')))
+            # Plain text body
+            fallbacks.append(('POST /control text reboot', f'http://{target_ip}/control', 'text/plain', b'reboot'))
+            # GET /reboot
+            fallbacks.append(('GET /reboot', f'http://{target_ip}/reboot', 'GET', None))
+
+            for label, url_fb, ctype, body_fb in fallbacks:
+                try:
+                    logging.debug('Attempting fallback %s -> %s', label, url_fb)
+                    if body_fb is None and ctype == 'GET':
+                        req_fb = urllib.request.Request(url_fb, method='GET')
+                    else:
+                        req_fb = urllib.request.Request(url_fb, data=body_fb, headers={'Content-Type': ctype}, method='POST')
+                    with urllib.request.urlopen(req_fb, timeout=timeout) as r2:
+                        resp_body = r2.read().decode('utf-8', errors='ignore')
+                        logging.info('Fallback %s to %s succeeded: %s', label, target_ip, r2.getcode())
+                        return True, {'code': r2.getcode(), 'body': resp_body, 'fallback': label}, r2.getcode()
+                except Exception as e2:
+                    logging.debug('Fallback %s to %s failed: %s', label, target_ip, e2)
+        detail = f'HTTP {e.code}: {e.reason}' + (f". Body: {body[:256]}" if body else '')
+        return False, detail, e.code
+    except urllib.error.URLError as e:
+        # Network-level errors like connection reset or address errors
+        reason = getattr(e, 'reason', None)
+        try:
+            import errno as _errno
+            if isinstance(reason, ConnectionResetError) or (isinstance(reason, OSError) and getattr(reason, 'errno', None) in (_errno.WSAECONNRESET, _errno.ECONNRESET if hasattr(_errno, 'ECONNRESET') else None)):
+                logging.warning('Command %s to %s connection reset: %s', action, target_ip, reason)
+                detail = f'Connection reset by device: {reason}'
+                # For certain actions, try alternative endpoints/payloads similar to reboot fallbacks
+                if action.lower() in ('reboot', 'startap', 'disconnect', 'stopap'):
+                    fallbacks = []
+                    # For startap and similar actions, try explicit endpoints and alternative payloads
+                    if action.lower() == 'startap':
+                        fallbacks.append(('POST /startap (empty JSON)', f'http://{target_ip}/startap', 'application/json', json.dumps({}).encode('utf-8')))
+                        fallbacks.append(('GET /startap', f'http://{target_ip}/startap', 'GET', None))
+                        fallbacks.append(('POST /control json cmd=startap', f'http://{target_ip}/control', 'application/json', json.dumps({'cmd':'startap'}).encode('utf-8')))
+                        fallbacks.append(('POST /control json action=startap', f'http://{target_ip}/control', 'application/json', json.dumps({'action':'startap'}).encode('utf-8')))
+                        fallbacks.append(('POST /control form action=startap', f'http://{target_ip}/control', 'application/x-www-form-urlencoded', 'action=startap'.encode('utf-8')))
+                    else:
+                        # Generic fallback attempts for other control actions
+                        fallbacks.append((f'POST /{action} (empty JSON)', f'http://{target_ip}/{action}', 'application/json', json.dumps({}).encode('utf-8')))
+                        fallbacks.append((f'GET /{action}', f'http://{target_ip}/{action}', 'GET', None))
+                        fallbacks.append((f'POST /control form action={action}', f'http://{target_ip}/control', 'application/x-www-form-urlencoded', f'action={action}'.encode('utf-8')))
+
+                    for label, url_fb, ctype, body_fb in fallbacks:
+                        try:
+                            logging.debug('Attempting fallback %s -> %s', label, url_fb)
+                            if body_fb is None and ctype == 'GET':
+                                req_fb = urllib.request.Request(url_fb, method='GET')
+                            else:
+                                req_fb = urllib.request.Request(url_fb, data=body_fb, headers={'Content-Type': ctype}, method='POST')
+                            with urllib.request.urlopen(req_fb, timeout=timeout) as r2:
+                                resp_body = r2.read().decode('utf-8', errors='ignore')
+                                logging.info('Fallback %s to %s succeeded: %s', label, target_ip, r2.getcode())
+                                return True, {'code': r2.getcode(), 'body': resp_body, 'fallback': label}, r2.getcode()
+                        except Exception as e2:
+                            logging.debug('Fallback %s to %s failed: %s', label, target_ip, e2)
+                return False, detail, 502
+        except Exception:
+            pass
+        # Generic URLError fallback
+        logging.warning('URLError sending command %s to %s: %s', action, target_ip, e)
+        return False, str(e), 502
+    except Exception as e:
+        logging.exception('Error sending command %s to %s', action, target_ip)
+        return False, str(e), 502
+
+
+class PushDeviceConfigView(APIView):
+    """Admin-only: push the canonical DeviceConfig to a device (by id or ip)."""
+    def post(self, request):
+        if not request.user.is_staff:
+            return Response({"detail": "Admin access required."}, status=status.HTTP_403_FORBIDDEN)
+
+        device_id = request.data.get('device_id')
+        ip = request.data.get('ip')
+        if not device_id and not ip:
+            return Response({"detail": "device_id or ip required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        device = None
+        if device_id:
+            device = get_object_or_404(DeviceInstance, id=device_id)
+            target_ip = device.ip
+        else:
+            target_ip = ip
+
+        reboot_on_reset = bool(request.data.get('reboot_on_reset', False))
+        ok, resp, code = push_config_to_target(target_ip, reboot_on_reset=reboot_on_reset)
+        if ok:
+            return Response({"status": "ok", "code": resp.get('code'), "body": resp.get('body'), "reboot_attempted": reboot_on_reset})
+        # include reboot flag for diagnosis
+        return Response({"status": "error", "detail": resp, "reboot_attempted": reboot_on_reset}, status=code)
+
+
+class DeviceInstanceDetailView(APIView):
+    def get(self, request, device_id: int):
+        device = get_object_or_404(DeviceInstance, id=device_id)
+        return Response(DeviceInstanceSerializer(device, context={'request': request}).data)
+
+
+class ProvisionDeviceView(APIView):
+    """Allow a device owner or admin to trigger a provisioning push."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, device_id: int):
+        device = get_object_or_404(DeviceInstance, id=device_id)
+        # Only owner (claimed_by) or staff can provision
+        if not (request.user.is_staff or (device.claimed_by and device.claimed_by == request.user)):
+            return Response({"detail": "Only device owner or admin can provision."}, status=status.HTTP_403_FORBIDDEN)
+
+        reboot_on_reset = bool(request.data.get('reboot_on_reset', False))
+        ok, resp, code = push_config_to_target(device.ip, reboot_on_reset=reboot_on_reset)
+        if ok:
+            return Response({"status": "ok", "code": resp.get('code'), "body": resp.get('body'), "reboot_attempted": reboot_on_reset})
+        return Response({"status": "error", "detail": resp, "reboot_attempted": reboot_on_reset}, status=code)
+
+
+class DeviceControlView(APIView):
+    """Allow owner/admin to send control commands to a device (disconnect/startap/stopap/etc)."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        device_id = request.data.get('device_id')
+        ip = request.data.get('ip')
+        action = (request.data.get('action') or '').strip()
+        if not action or (not device_id and not ip):
+            return Response({"detail": "action and (device_id or ip) required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        target_ip = None
+        # If device_id provided, allow either device owner (claimed_by) or staff
+        if device_id:
+            device = get_object_or_404(DeviceInstance, id=device_id)
+            if not (request.user.is_staff or (device.claimed_by and device.claimed_by == request.user)):
+                return Response({"detail": "Only device owner or admin can send control commands."}, status=status.HTTP_403_FORBIDDEN)
+            target_ip = device.ip
+        else:
+            # Raw IP commands require admin privilege
+            if not request.user.is_staff:
+                return Response({"detail": "Admin access required for raw IP commands."}, status=status.HTTP_403_FORBIDDEN)
+            target_ip = ip
+
+        ok, resp, code = push_command_to_target(target_ip, action, payload=request.data.get('payload'))
+        if ok:
+            return Response({"status": "ok", "code": resp.get('code'), "body": resp.get('body')})
+        return Response({"status": "error", "detail": resp}, status=code)
+
+
+class PushDeviceConfigAllView(APIView):
+    """Admin-only: push current DeviceConfig to all discovered devices."""
+    def post(self, request):
+        if not request.user.is_staff:
+            return Response({"detail": "Admin access required."}, status=status.HTTP_403_FORBIDDEN)
+        devices = DeviceInstance.objects.all()
+        results = []
+        for d in devices:
+            ok, resp, code = push_config_to_target(d.ip)
+            results.append({ 'device_id': d.id, 'ip': d.ip, 'ok': ok, 'detail': resp })
+        return Response({ 'results': results })
+
+
+class ScanDevicesView(APIView):
+    """Quick LAN scan to discover ESP devices on the local /24 network.
+
+    GET: returns a list of discovered devices (ip, probe_code, body_snippet)
+    """
+    def get_local_ip(self) -> str:
+        """Return a likely outbound local IP (doesn't require internet access)."""
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            # This does not actually send packets; it's used to determine the local IP used for outbound traffic
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+        except Exception:
+            ip = None
+        finally:
+            try:
+                s.close()
+            except Exception:
+                pass
+        return ip or '127.0.0.1'
+
+    def probe(self, ip: str) -> Dict:
+        """Probe a single IP for an HTTP response on port 80. Returns dict with info on success."""
+        result = {'ip': ip, 'ok': False, 'code': None, 'body': None}
+        try:
+            # Quick TCP probe
+            sock = socket.create_connection((ip, 80), timeout=0.6)
+            sock.close()
+        except Exception as e:
+            return result
+
+        # If TCP succeeded, try a small HTTP GET to / (and /info) with short timeout
+        for path in ('/', '/info', '/device-info'):
+            try:
+                req = urllib.request.Request(f'http://{ip}{path}', method='GET')
+                with urllib.request.urlopen(req, timeout=1.2) as r:
+                    body = r.read(1024).decode('utf-8', errors='ignore')
+                    result.update({'ok': True, 'code': r.getcode(), 'body': body[:512]})
+                    return result
+            except Exception:
+                continue
+
+        # If TCP succeeded but no HTTP response recognized, mark reachable anyway
+        result['ok'] = True
+        return result
+
+    def get(self, request):
+        # Determine local /24 to scan
+        local_ip = self.get_local_ip()
+        parts = local_ip.split('.')
+        if len(parts) != 4:
+            return Response({'detail': 'Unable to determine local network'}, status=status.HTTP_400_BAD_REQUEST)
+        base = '.'.join(parts[:3])
+        candidates = [f"{base}.{i}" for i in range(1, 255)]
+
+        results: List[Dict] = []
+        # Parallelize probes
+        with concurrent.futures.ThreadPoolExecutor(max_workers=40) as ex:
+            futures = {ex.submit(self.probe, ip): ip for ip in candidates}
+            for fut in concurrent.futures.as_completed(futures, timeout=30):
+                try:
+                    r = fut.result()
+                    if r.get('ok'):
+                        results.append(r)
+                except Exception:
+                    continue
+
+        return Response({'devices': results})
 
 
 class BorrowerRegistrationView(APIView):

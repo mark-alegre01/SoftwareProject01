@@ -3,6 +3,81 @@
 {% block title %}Register Borrower - RFID Borrowing System{% endblock %}
 
 {% block content %}
+<style>
+/* Responsive QR Modal */
+#borrowerQrReader {
+  position: relative !important;
+  width: 100% !important;
+  aspect-ratio: 1 !important;
+  min-height: 240px !important;
+  background: #000 !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+}
+#borrowerQrReader .qrbox {
+  border: 3px solid rgba(34, 197, 94, 0.95) !important;
+  box-sizing: border-box !important;
+  border-radius: 10px !important;
+  position: relative !important;
+}
+#borrowerQrReader .html5-qrcode-mask {
+  background: rgba(0, 0, 0, 0.5) !important;
+}
+#borrowerQrReader .html5-qrcode-mask .html5-qrcode-mask-inner {
+  background: transparent !important;
+}
+#borrowerQrReader video {
+  width: 100% !important;
+  height: auto !important;
+  display: block !important;
+}
+#borrowerQrReader canvas {
+  width: 100% !important;
+  height: auto !important;
+}
+/* Corner brackets for green QR scanner */
+#borrowerQrReader .qr-corner {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border: 3px solid #22c55e;
+  pointer-events: none;
+  z-index: 20;
+  animation: cornerPulseGreen 1.5s infinite;
+}
+#borrowerQrReader .qr-corner.top-left { 
+  top: 12px;
+  left: 12px;
+  border-right: none; 
+  border-bottom: none; 
+  border-radius: 6px 0 0 0; 
+}
+#borrowerQrReader .qr-corner.top-right { 
+  top: 12px;
+  right: 12px;
+  border-left: none; 
+  border-bottom: none; 
+  border-radius: 0 6px 0 0; 
+}
+#borrowerQrReader .qr-corner.bottom-left { 
+  bottom: 12px;
+  left: 12px;
+  border-right: none; 
+  border-top: none; 
+  border-radius: 0 0 0 6px; 
+}
+#borrowerQrReader .qr-corner.bottom-right { 
+  bottom: 12px;
+  right: 12px;
+  border-left: none; 
+  border-top: none; 
+  border-radius: 0 0 6px 0; 
+}
+@keyframes cornerPulseGreen { 
+  0%, 100% { opacity: 0.8; box-shadow: 0 0 0 0px rgba(34, 197, 94, 0.4); } 
+  50% { opacity: 1; box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.2); } 
+}
+</style>
 <div class="page-header">
   <h1>👤 Register Borrower</h1>
   <p>First-time borrowers must register before borrowing items</p>
@@ -17,30 +92,20 @@
     <div id="borrowerFormMode" class="scan-status waiting hidden" style="margin-bottom: 16px;">Editing borrower</div>
     {% endif %}
     <label>Scan User QR Code (Optional)
-      <div style="background: #e0f2fe; padding: 12px; border-radius: 10px; margin-bottom: 12px; border-left: 4px solid #0284c7;">
-        <strong style="display: block; margin-bottom: 8px; color: #0c4a6e;">📱 Use Phone Camera:</strong>
-        <p style="margin: 0; font-size: 0.9rem; color: #0c4a6e;">
-          <strong>Easiest:</strong> Open <code style="background: white; padding: 2px 6px; border-radius: 4px;">http://192.168.1.38:8000{% url 'core:register-borrower' %}</code> on your phone browser (same WiFi network)
-        </p>
-      </div>
       <button type="button" id="scanBorrowerQrBtn" class="btn btn-primary btn-lg" style="width: 100%; margin-bottom: 12px;">
         <span class="btn-icon">📷</span>
         <span class="btn-text">Scan QR Code</span>
       </button>
-      <div id="borrowerQrReader" style="display: none;"></div>
-      <div id="cameraPermissionHelp" class="hidden" style="background: #fef3c7; padding: 16px; border-radius: 10px; margin: 12px 0; border-left: 4px solid #f59e0b;">
-        <strong style="display: block; margin-bottom: 8px; color: #92400e;">📷 How to Enable Camera Access:</strong>
-        <ul style="margin: 8px 0; padding-left: 20px; color: #92400e; font-size: 0.9rem;">
-          <li><strong>Chrome/Edge:</strong> Click the camera icon (📷) in the address bar → Allow</li>
-          <li><strong>Firefox:</strong> Click the padlock icon → Permissions → Camera → Allow</li>
-          <li><strong>Safari:</strong> Safari → Settings → Websites → Camera → Allow</li>
-          <li><strong>Mobile:</strong> Go to browser settings → Site permissions → Camera → Allow</li>
-        </ul>
-        <p style="margin: 8px 0 0 0; color: #92400e; font-size: 0.85rem;"><strong>Note:</strong> If using localhost (127.0.0.1), camera access works automatically. For network access, HTTPS may be required.</p>
-        <button type="button" id="retryBorrowerCamera" class="btn btn-primary btn-lg">
-          <span class="btn-icon">🔄</span>
-          <span class="btn-text">Retry Camera</span>
-        </button>
+      <div id="borrowerQrReader" style="display: none; position: relative;">
+        <div class="qr-corner top-left"></div>
+        <div class="qr-corner top-right"></div>
+        <div class="qr-corner bottom-left"></div>
+        <div class="qr-corner bottom-right"></div>
+      </div>
+      <div id="cameraPermissionHelp" class="hidden" style="background: #fef3c7; padding: 12px; border-radius: 10px; margin: 12px 0; border-left: 4px solid #f59e0b;">
+        <div style="font-weight: 700; color: #92400e; font-size: 13px; margin-bottom: 8px;">Camera access needed</div>
+        <button type="button" id="retryBorrowerCamera" class="btn btn-primary btn-lg" style="width: 100%; padding: 10px; font-size: 14px; border-radius: 8px; background: #f59e0b; border: none; color: white; font-weight: 700;">🔄 Enable Camera</button>
+      </div>
       </div>
     </label>
     
@@ -173,6 +238,66 @@
   let editingBorrowerId = null;
   let borrowerSearchTimeout = null;
 
+  // Detect if browser supports secure context (HTTPS/localhost)
+  const isSecureContext = window.isSecureContext || window.location.protocol === 'https:';
+
+  // Handle photo capture from file input (works on HTTP)
+  document.getElementById('borrowerQrPhotoInput')?.addEventListener('change', async function(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const imageData = event.target?.result;
+        if (!imageData || typeof imageData !== 'string') return;
+
+        try {
+          // Use Html5Qrcode to scan the photo
+          const result = await Html5Qrcode.scanFile(imageData, false);
+          if (result) {
+            const text = result.trim();
+            document.getElementById('borrowerQrData').value = text;
+            
+            // Same parsing logic as camera scan
+            try {
+              if (text.includes('|')) {
+                const parts = text.split('|').map(p => p.trim());
+                if (parts[0]) {
+                  const raw = parts[0];
+                  if (raw.includes(',')) {
+                    const [last, first] = raw.split(',', 2).map(s => s.trim());
+                    const pretty = `${first} ${last}`.replace(/\s+/g, ' ').trim();
+                    document.getElementById('borrowerName').value = pretty;
+                  } else {
+                    document.getElementById('borrowerName').value = raw;
+                  }
+                }
+                if (parts[1]) document.getElementById('borrowerEmail').value = parts[1];
+              }
+            } catch (parseErr) {
+              document.getElementById('borrowerName').value = text;
+            }
+
+            // Close QR reader div
+            const qrReader = document.getElementById('borrowerQrReader');
+            if (qrReader) qrReader.style.display = 'none';
+          }
+        } catch (err) {
+          console.error('QR scan error:', err);
+          alert('No QR code found in photo. Try another angle.');
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Photo processing error:', err);
+      alert('Could not process photo. Try again.');
+    }
+
+    // Reset input
+    e.target.value = '';
+  });
+
   function showToast(dialog, message) {
     dialog.textContent = message;
     dialog.showModal();
@@ -286,14 +411,18 @@
           }
           
           try {
+            const tokenToSend = csrfToken || (document.cookie.match(/csrftoken=([^;]+)/)||[])[1] || '';
+            if (!tokenToSend) console.warn('No CSRF token found for borrower update');
             const res = await fetch(`${apiBase}/borrowers/${target.id}`, {
               method: 'PATCH',
+              credentials: 'same-origin',
               headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken || ''
+                'X-CSRFToken': tokenToSend
               },
               body: JSON.stringify({ name, email, rfid_uid: rfid })
             });
+            if (res.status === 403) console.error('Borrower update 403; csrftoken cookie=', (document.cookie.match(/csrftoken=([^;]+)/)||[])[1], 'sent header=', tokenToSend);
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.detail || 'Update failed');
             
@@ -378,17 +507,19 @@
                 rfid: target.rfid_uid?.substring(0, 10) + '...'
               });
               
+              const tokenToSend = csrfToken || (document.cookie.match(/csrftoken=([^;]+)/)||[])[1] || '';
+              if (!tokenToSend) console.warn('No CSRF token found for borrower delete');
               const res = await fetch(`${apiBase}/borrowers/${target.id}`, {
                 method: 'DELETE',
-                headers: {
-                  'X-CSRFToken': csrfToken || ''
-                }
+                credentials: 'same-origin',
+                headers: { 'X-CSRFToken': tokenToSend }
               });
               
               console.log('Delete response:', {
                 status: res.status,
                 statusText: res.statusText
               });
+              if (res.status === 403) console.error('Delete borrower 403; csrftoken cookie=', (document.cookie.match(/csrftoken=([^;]+)/)||[])[1], 'sent header=', tokenToSend);
               
               if (res.status !== 204 && !res.ok) {
                 const data = await res.json().catch(() => ({}));
@@ -498,6 +629,12 @@
     qrReader.innerHTML = '';
     
     try {
+      // Check if HTTPS is available
+      if (!isSecureContext) {
+        qrReader.innerHTML = '<div style="padding: 40px; text-align: center; color: #f5f5f5; font-size: 14px;"><p style="margin: 0;">📸 Live camera requires HTTPS</p><p style="margin: 8px 0 0 0; font-size: 12px; opacity: 0.7;">Use the photo capture option instead</p></div>';
+        return;
+      }
+
       // Check camera permissions
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -529,7 +666,7 @@
       
       await borrowerQrScanner.start(
         config,
-        { fps: 10, qrbox: { width: 250, height: 250 } },
+        { fps: 25, qrbox: { width: 280, height: 280 }, aspectRatio: 1.0 },
         (decodedText) => {
           const text = decodedText.trim();
           document.getElementById('borrowerQrData').value = text;
@@ -607,11 +744,13 @@
 
     if (editingBorrowerId) {
       try {
+        const tokenToSend = csrfToken || (document.cookie.match(/csrftoken=([^;]+)/)||[])[1] || '';
+        if (!tokenToSend) console.warn('No CSRF token found for borrower update (form)');
         const res = await fetch(`${apiBase}/borrowers/${editingBorrowerId}`, {
-          method: 'PATCH',
+          method: 'PATCH', credentials: 'same-origin',
           headers: {
             'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken || ''
+            'X-CSRFToken': tokenToSend
           },
           body: JSON.stringify({
             name,
@@ -619,6 +758,7 @@
             rfid_uid: rfid
           })
         });
+        if (res.status === 403) console.error('Patch borrower 403; csrftoken cookie=', (document.cookie.match(/csrftoken=([^;]+)/)||[])[1], 'sent header=', tokenToSend);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.detail || 'Update failed');
         showToast(toast, '💾 Borrower updated');
@@ -638,11 +778,13 @@
         rfid: rfid.substring(0, 10) + '...' // Log first 10 chars of RFID
       });
       
+      const tokenToSend = csrfToken || (document.cookie.match(/csrftoken=([^;]+)/)||[])[1] || '';
+      if (!tokenToSend) console.warn('No CSRF token found for borrower registration');
       const res = await fetch(`${apiBase}/register-borrower`, {
-        method: 'POST',
+        method: 'POST', credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken || ''
+          'X-CSRFToken': tokenToSend
         },
         body: JSON.stringify({
           name: name,
@@ -651,6 +793,7 @@
           qr_data: qrPayload || ''
         })
       });
+      if (res.status === 403) console.error('Register borrower 403; csrftoken cookie=', (document.cookie.match(/csrftoken=([^;]+)/)||[])[1], 'sent header=', tokenToSend);
       
       const data = await res.json().catch(() => ({}));
       console.log('📥 Registration response:', {
@@ -858,6 +1001,14 @@
         startRfidScan();
       }
     });
+    
+    // Auto-start RFID scanning when page loads (for better UX)
+    console.log('Register borrower page loaded - auto-starting RFID scan');
+    setTimeout(() => {
+      if (!isScanning && !document.getElementById('borrowerRfidInput').value) {
+        startRfidScan();
+      }
+    }, 500);
   }
   
   // Initialize when DOM is ready

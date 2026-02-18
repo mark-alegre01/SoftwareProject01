@@ -113,6 +113,8 @@ CSRF_TRUSTED_ORIGINS: list[str] = [
     "https://localhost:8443",
     "https://127.0.0.1",
     "https://127.0.0.1:8443",
+    "https://192.168.1.63",
+    "https://192.168.1.63:8443",
 ]
 
 LAN_IP = os.environ.get("LAN_IP")
