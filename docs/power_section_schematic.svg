@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700">
+  <style>
+    .box{fill:#f7f7f7;stroke:#333;stroke-width:1.5}
+    .item{font:14px monospace;}
+    .label{font:16px sans-serif; font-weight:bold}
+    .net{font:13px sans-serif}
+    .arrow{stroke:#333;stroke-width:2;fill:none;marker-end:url(#arrowhead)}
+  </style>
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="20" y="30" class="label">Power Section (12V barrel -> Buck -> 3.3V). MB102 daughter header + PWR_SEL jumper</text>
+
+  <!-- DC Jack -->
+  <rect x="40" y="70" width="180" height="80" class="box" />
+  <text x="70" y="110" class="item">J1: DC_JACK_2.1mm</text>
+  <text x="70" y="130" class="net">+12V</text>
+
+  <!-- Polyfuse -->
+  <rect x="260" y="70" width="160" height="60" class="box"/>
+  <text x="280" y="100" class="item">F1: Polyfuse (e.g. 1A hold)</text>
+
+  <!-- Schottky -->
+  <rect x="460" y="70" width="160" height="60" class="box"/>
+  <text x="480" y="100" class="item">D1: Schottky (SS34)</text>
+  <text x="480" y="120" class="net">Reverse protection</text>
+
+  <!-- Input cap -->
+  <rect x="40" y="190" width="220" height="70" class="box"/>
+  <text x="60" y="220" class="item">CIN: 100uF / 25V</text>
+
+  <!-- Buck -->
+  <rect x="320" y="190" width="260" height="120" class="box"/>
+  <text x="340" y="215" class="item">U1: Buck converter (12V -> 3.3V)</text>
+  <text x="340" y="235" class="item">Example: MP1584 module or SMD regulator (2–3A)</text>
+  <text x="340" y="255" class="net">VIN, GND, VOUT(3.3V)</text>
+
+  <!-- Buck input arrow -->
+  <path d="M220 120 L260 120 L260 200" class="arrow" />
+  <path d="M380 120 L460 120 L460 200" class="arrow" />
+
+  <!-- Buck output caps -->
+  <rect x="620" y="190" width="220" height="70" class="box"/>
+  <text x="640" y="220" class="item">COUT: 220–470uF / 10V + 0.1uF MLCC</text>
+
+  <!-- 3.3V net -->
+  <path d="M580 230 L720 230" class="arrow" />
+  <text x="740" y="230" class="net">NET: 3V3</text>
+
+  <!-- MB102 header area -->
+  <rect x="40" y="300" width="360" height="180" class="box"/>
+  <text x="60" y="330" class="label">MB102 Daughter Header (prototyping)</text>
+  <text x="60" y="355" class="item">Header: 1x4 or 2x3 depending on MB102 pinout</text>
+  <text x="60" y="380" class="item">Pins: VIN, 5V_OUT (optional), 3V3_OUT, GND</text>
+  <text x="60" y="405" class="item">Important: DO NOT feed MB102 VIN with 12V when using MB102 onboard LDO</text>
+  <text x="60" y="430" class="item">Prefer: connect only MB102 3V3_OUT to board 3.3V via jumper</text>
+
+  <!-- PWR_SEL jumper -->
+  <rect x="430" y="360" width="120" height="60" class="box"/>
+  <text x="440" y="395" class="item">P1: PWR_SEL (2-pin)</text>
+  <text x="440" y="415" class="net">When fitted -> MB102 3V3_OUT connects to board 3V3</text>
+
+  <!-- Testpoints -->
+  <rect x="600" y="320" width="520" height="160" class="box"/>
+  <text x="620" y="350" class="label">Testpoints & Outputs</text>
+  <text x="620" y="375" class="item">TP_VIN -> after D1 (12V)</text>
+  <text x="620" y="395" class="item">TP_3V3 -> 3.3V net (measure here)</text>
+  <text x="620" y="415" class="item">TP_GND -> Ground</text>
+
+  <!-- ESP32 & RFID blocks -->
+  <rect x="40" y="510" width="320" height="120" class="box"/>
+  <text x="60" y="545" class="label">ESP32-S3 Module</text>
+  <text x="60" y="570" class="item">Connect VCC to 3V3, GND to GND</text>
+  <text x="60" y="590" class="item">Add 100nF near VDD pins and 10uF local bulk</text>
+
+  <rect x="420" y="510" width="320" height="120" class="box"/>
+  <text x="440" y="545" class="label">RFID Module (e.g., RC522)</text>
+  <text x="440" y="570" class="item">Connect VCC to 3V3, GND to GND, SPI signals to ESP32</text>
+
+  <!-- Connect 3V3 to modules -->
+  <path d="M720 230 L720 540 L740 540" class="arrow"/>
+  <text x="740" y="560" class="net">3V3 -> ESP32-S3, RFID</text>
+
+  <!-- Ground note -->
+  <text x="20" y="680" class="net">All grounds must be common: use ground plane and thermal vias for regulator.</text>
+
+</svg>
